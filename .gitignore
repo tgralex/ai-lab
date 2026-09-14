@@ -1,0 +1,29 @@
+# Secrets
+.env
+.env.*.local
+
+# .NET build output
+bin/
+obj/
+*.user
+*.suo
+
+# Rider / VS
+.vs/
+.idea/
+
+# App data (runtime, not source) — created under the API's content root (src/AiLab.Api/data in dev)
+data/
+
+# Angular / Node
+src/AiLab.UI/node_modules/
+src/AiLab.UI/dist/
+src/AiLab.UI/.angular/
+
+# Published Angular build copied into the API host
+src/AiLab.Api/wwwroot/*
+!src/AiLab.Api/wwwroot/.gitkeep
+
+# Misc
+*.pem
+npm-debug.log*

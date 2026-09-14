@@ -1,0 +1,173 @@
+<div class="flex h-screen flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
+  <header class="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
+    <div class="flex items-center gap-3">
+      <a [routerLink]="['/w', workspaceId()]" class="text-sm text-neutral-400 hover:text-neutral-600">← Workspace</a>
+      <span class="text-neutral-300">/</span>
+      <h1 class="text-sm font-semibold">{{ plan()?.name }}</h1>
+    </div>
+    <div class="flex gap-2">
+      @if (!editing()) {
+        <button (click)="startEditing()" class="rounded-md border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900">Edit</button>
+      }
+      <button
+        (click)="execute()"
+        [disabled]="executing() || !validation()?.isValid"
+        class="rounded-md bg-blue-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+      >
+        {{ executing() ? 'Running…' : 'Execute Plan' }}
+      </button>
+    </div>
+  </header>
+
+  @if (validation() && !validation()!.isValid) {
+    <div class="border-b border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">
+      @for (err of validation()!.errors; track err) {
+        <div>{{ err }}</div>
+      }
+    </div>
+  }
+
+  <div class="flex flex-1 overflow-hidden">
+    @if (editing()) {
+      <aside class="w-80 shrink-0 overflow-y-auto border-r border-neutral-200 p-3 dark:border-neutral-800">
+        <label class="mb-1 block text-xs font-semibold uppercase text-neutral-400">Plan name</label>
+        <input
+          [ngModel]="editName()"
+          (ngModelChange)="editName.set($event)"
+          class="mb-4 w-full rounded-md border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+        />
+
+        <h2 class="mb-2 text-xs font-semibold uppercase text-neutral-400">Requests in plan</h2>
+        <ul class="mb-4 space-y-1">
+          @for (r of allRequests(); track r.id) {
+            <li class="flex items-center gap-2 text-sm">
+              <input type="checkbox" [checked]="editRequestIds().has(r.id)" (change)="toggleEditRequest(r.id)" />
+              <span class="flex-1 truncate">{{ r.name }}</span>
+              <label class="flex items-center gap-1 text-xs text-neutral-400">
+                <input type="radio" name="finalOutput" [checked]="editFinalOutputId() === r.id" (change)="editFinalOutputId.set(r.id)" />
+                final
+              </label>
+            </li>
+          }
+        </ul>
+
+        <h2 class="mb-2 text-xs font-semibold uppercase text-neutral-400">Dependencies</h2>
+        <div class="mb-2 flex gap-1">
+          <select [ngModel]="addEdgeFrom()" (ngModelChange)="addEdgeFrom.set($event)" class="flex-1 rounded-md border border-neutral-300 px-1 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900">
+            <option value="">from…</option>
+            @for (r of allRequests(); track r.id) {
+              <option [value]="r.id">{{ r.name }}</option>
+            }
+          </select>
+          <select [ngModel]="addEdgeTo()" (ngModelChange)="addEdgeTo.set($event)" class="flex-1 rounded-md border border-neutral-300 px-1 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900">
+            <option value="">to…</option>
+            @for (r of allRequests(); track r.id) {
+              <option [value]="r.id">{{ r.name }}</option>
+            }
+          </select>
+          <button (click)="addEdge()" class="rounded-md bg-neutral-900 px-2 text-xs text-white dark:bg-neutral-100 dark:text-neutral-900">+</button>
+        </div>
+        <ul class="mb-4 space-y-1 text-xs">
+          @for (d of editDependencies(); track d.from + d.to; let i = $index) {
+            <li class="flex items-center justify-between">
+              <span>{{ requestsById().get(d.from)?.name }} → {{ requestsById().get(d.to)?.name }}</span>
+              <button (click)="removeEdge(i)" class="text-red-500">✕</button>
+            </li>
+          }
+        </ul>
+
+        <div class="flex gap-2">
+          <button (click)="saveEdits()" class="rounded-md bg-neutral-900 px-3 py-1 text-xs text-white dark:bg-neutral-100 dark:text-neutral-900">Save</button>
+          <button (click)="editing.set(false)" class="rounded-md border border-neutral-300 px-3 py-1 text-xs dark:border-neutral-700">Cancel</button>
+        </div>
+      </aside>
+    }
+
+    <main class="flex-1 overflow-auto p-4">
+      <svg [attr.width]="graphSize().width" [attr.height]="graphSize().height">
+        @for (edge of edges(); track $index) {
+          <line
+            [attr.x1]="edge.points[0].x" [attr.y1]="edge.points[0].y"
+            [attr.x2]="edge.points[1].x" [attr.y2]="edge.points[1].y"
+            stroke="#a3a3a3" stroke-width="1.5" marker-end="url(#arrow)"
+          />
+        }
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+            <path d="M0,0 L8,4 L0,8 Z" fill="#a3a3a3" />
+          </marker>
+        </defs>
+
+        @for (node of nodes(); track node.id) {
+          <g [attr.transform]="'translate(' + node.x + ',' + node.y + ')'">
+            <rect
+              [attr.width]="node.width" [attr.height]="node.height" rx="8"
+              fill="white" class="dark:fill-neutral-900"
+              [attr.stroke]="nodeStatusColor(node.status)" stroke-width="2"
+            />
+            @if (node.isFinalOutput) {
+              <text x="8" y="14" font-size="9" fill="#3b82f6" font-weight="600">FINAL OUTPUT</text>
+            }
+            <text x="8" [attr.y]="node.isFinalOutput ? 28 : 18" font-size="12" font-weight="600" fill="currentColor">{{ node.request.name }}</text>
+            <text x="8" [attr.y]="node.isFinalOutput ? 42 : 34" font-size="10" fill="#737373">{{ node.request.providerId }} · {{ node.request.modelId }}</text>
+            @if (node.latestRun; as run) {
+              <text x="8" [attr.y]="node.isFinalOutput ? 58 : 50" font-size="10" fill="#737373">
+                {{ formatTimeSpan(run.totalDuration) }} · {{ run.usage.totalTokens }} tok · {{ formatCost(run.estimatedTotalCost) }}
+              </text>
+            } @else {
+              <text x="8" [attr.y]="node.isFinalOutput ? 58 : 50" font-size="10" fill="#a3a3a3">{{ node.status === 'running' ? 'running…' : 'not run yet' }}</text>
+            }
+          </g>
+        }
+      </svg>
+
+      @if (currentPlanRun(); as run) {
+        <div class="mt-6 max-w-2xl">
+          <h2 class="mb-2 text-sm font-semibold">Plan Statistics</h2>
+          <table class="w-full text-xs">
+            <tbody>
+              <tr><td class="py-1 text-neutral-500">Wall-clock duration</td><td class="text-right font-mono">{{ formatTimeSpan(run.wallClockDuration) }}</td></tr>
+              <tr><td class="py-1 text-neutral-500">Cumulative request time</td><td class="text-right font-mono">{{ formatTimeSpan(run.cumulativeRequestDuration) }}</td></tr>
+              <tr><td class="py-1 text-neutral-500">Total input tokens</td><td class="text-right font-mono">{{ run.totalInputTokens }}</td></tr>
+              <tr><td class="py-1 text-neutral-500">Total output tokens</td><td class="text-right font-mono">{{ run.totalOutputTokens }}</td></tr>
+              <tr><td class="py-1 text-neutral-500">Total cost</td><td class="text-right font-mono">{{ formatCost(run.totalEstimatedCost) }}</td></tr>
+            </tbody>
+          </table>
+
+          <h3 class="mb-1 mt-3 text-xs font-semibold uppercase text-neutral-400">By level</h3>
+          <table class="w-full text-xs">
+            <thead class="text-neutral-400"><tr><th class="text-left font-normal">Level</th><th class="text-right font-normal">Requests</th><th class="text-right font-normal">Wall-clock</th><th class="text-right font-normal">Cumulative</th></tr></thead>
+            <tbody>
+              @for (g of run.groups; track g.levelIndex) {
+                <tr class="border-t border-neutral-100 dark:border-neutral-800">
+                  <td>{{ g.levelIndex + 1 }}</td>
+                  <td class="text-right">{{ g.aiRequestIds.length }}</td>
+                  <td class="text-right font-mono">{{ formatTimeSpan(g.wallClockDuration) }}</td>
+                  <td class="text-right font-mono">{{ formatTimeSpan(g.cumulativeRequestDuration) }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+
+          @if (finalOutputRun(); as finalRun) {
+            <h3 class="mb-1 mt-4 text-xs font-semibold uppercase text-neutral-400">Final Output</h3>
+            <pre class="whitespace-pre-wrap break-words rounded-md bg-neutral-100 p-3 font-mono text-xs dark:bg-neutral-900">{{ finalRun.output }}</pre>
+          }
+        </div>
+      }
+
+      @if (planRuns().length > 0) {
+        <div class="mt-6 max-w-2xl">
+          <h2 class="mb-2 text-sm font-semibold">Run History</h2>
+          <ul class="divide-y divide-neutral-200 dark:divide-neutral-800">
+            @for (run of planRuns(); track run.id) {
+              <li (click)="viewPlanRun(run)" class="cursor-pointer py-2 text-xs hover:bg-neutral-100 dark:hover:bg-neutral-900">
+                {{ run.startedAt | date: 'short' }} — {{ formatTimeSpan(run.wallClockDuration) }} wall-clock, {{ formatCost(run.totalEstimatedCost) }}
+              </li>
+            }
+          </ul>
+        </div>
+      }
+    </main>
+  </div>
+</div>

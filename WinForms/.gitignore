@@ -1,0 +1,19 @@
+# Secrets
+.env
+.env.*.local
+
+# .NET build output
+bin/
+obj/
+*.user
+*.suo
+
+# Rider / VS
+.vs/
+.idea/
+
+# App workspace (user data, not source)
+Workspace/
+
+# Misc
+*.pem

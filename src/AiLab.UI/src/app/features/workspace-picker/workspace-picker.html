@@ -1,0 +1,59 @@
+<div class="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100">
+  <div class="mx-auto max-w-3xl px-4 py-12">
+    <div class="mb-8 flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-semibold">AI Lab</h1>
+        <p class="text-sm text-neutral-500">A request lab for creating, testing, comparing and benchmarking AI API calls.</p>
+      </div>
+      <div class="flex gap-2 text-xs">
+        @for (entry of providerStatus() | keyvalue; track entry.key) {
+          <span
+            class="rounded-full px-2.5 py-1 font-medium"
+            [class.bg-green-100]="entry.value.configured"
+            [class.text-green-800]="entry.value.configured"
+            [class.bg-neutral-200]="!entry.value.configured"
+            [class.text-neutral-600]="!entry.value.configured"
+          >
+            {{ entry.key }}: {{ entry.value.configured ? 'configured' : 'missing' }}
+          </span>
+        }
+      </div>
+    </div>
+
+    <div class="mb-6 flex gap-2">
+      <input
+        [ngModel]="newWorkspaceName()"
+        (ngModelChange)="newWorkspaceName.set($event)"
+        (keydown.enter)="createWorkspace()"
+        placeholder="New workspace name…"
+        class="flex-1 rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+      />
+      <button
+        (click)="createWorkspace()"
+        class="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900"
+      >
+        Create
+      </button>
+    </div>
+
+    @if (loading()) {
+      <p class="text-sm text-neutral-500">Loading…</p>
+    } @else if (workspaces().length === 0) {
+      <p class="text-sm text-neutral-500">No workspaces yet. Create one above to get started.</p>
+    } @else {
+      <ul class="divide-y divide-neutral-200 rounded-md border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
+        @for (ws of workspaces(); track ws.id) {
+          <li
+            (click)="open(ws)"
+            class="cursor-pointer px-4 py-3 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+          >
+            <div class="font-medium">{{ ws.name }}</div>
+            @if (ws.description) {
+              <div class="text-sm text-neutral-500">{{ ws.description }}</div>
+            }
+          </li>
+        }
+      </ul>
+    }
+  </div>
+</div>

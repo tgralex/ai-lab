@@ -1,0 +1,56 @@
+<div class="relative">
+  <button
+    type="button"
+    (click)="open.set(!open())"
+    class="flex w-full items-center justify-between rounded-md border border-neutral-300 bg-white px-3 py-2 text-left text-sm dark:border-neutral-700 dark:bg-neutral-900"
+  >
+    <span>
+      @if (selected(); as m) {
+        {{ m.displayName }} <span class="text-neutral-400">({{ m.providerId }})</span>
+      } @else {
+        <span class="text-neutral-400">Select a model…</span>
+      }
+    </span>
+    <span class="text-neutral-400">▾</span>
+  </button>
+
+  @if (open()) {
+    <div class="absolute z-20 mt-1 max-h-80 w-full min-w-[22rem] overflow-y-auto rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+      @for (group of groupedModels(); track group.providerId) {
+        <div class="border-b border-neutral-100 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:border-neutral-800">
+          {{ group.providerId }}
+        </div>
+        @for (m of group.models; track m.modelId) {
+          <button
+            type="button"
+            (click)="pick(m)"
+            class="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
+          >
+            <div class="flex w-full items-center justify-between">
+              <span class="font-medium">{{ m.displayName }}</span>
+              @if (m.recommended) {
+                <span class="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">recommended</span>
+              }
+            </div>
+            <div class="text-xs text-neutral-500">
+              @if (m.inputPricePerMillion !== null) {
+                {{ '$' + m.inputPricePerMillion }}/{{ '$' + m.outputPricePerMillion }} per M ·
+              }
+              {{ m.contextWindowTokens ? (m.contextWindowTokens | number) + ' ctx' : 'ctx n/a' }}
+              @if (m.supportsReasoning) { · reasoning }
+              @if (m.supportsStructuredOutput) { · structured }
+            </div>
+            @if (observedFor(m); as obs) {
+              <div class="text-xs text-neutral-400">
+                observed: median {{ formatMs(obs.totalLatency.median) }} · P95 {{ formatMs(obs.totalLatency.p95) }} · {{ obs.sampleCount }} runs
+              </div>
+            }
+          </button>
+        }
+      }
+      @if (groupedModels().length === 0) {
+        <div class="px-3 py-3 text-sm text-neutral-400">No models loaded — check provider credentials or refresh the catalog.</div>
+      }
+    </div>
+  }
+</div>

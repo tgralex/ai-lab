@@ -1,0 +1,50 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{E9FFA8AD-3163-4A0E-919A-8656E8A5E3C1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAiBench.Core", "src\OpenAiBench.Core\OpenAiBench.Core.csproj", "{CFD7E920-6B76-49D5-9D4A-EFE1DF392363}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAiBench.Infrastructure", "src\OpenAiBench.Infrastructure\OpenAiBench.Infrastructure.csproj", "{C1BD4835-A6D0-4D4A-BD00-E4E6B5C1475E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAiBench.WinForms", "src\OpenAiBench.WinForms\OpenAiBench.WinForms.csproj", "{12F2EB2B-4876-499E-A5BE-FCA46ECBDC2C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{4D74B8F0-190B-4127-94EE-3E988002A677}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OpenAiBench.Tests", "tests\OpenAiBench.Tests\OpenAiBench.Tests.csproj", "{1DAA4F9D-8E22-4392-943B-7C923C8D0B52}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CFD7E920-6B76-49D5-9D4A-EFE1DF392363}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CFD7E920-6B76-49D5-9D4A-EFE1DF392363}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CFD7E920-6B76-49D5-9D4A-EFE1DF392363}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CFD7E920-6B76-49D5-9D4A-EFE1DF392363}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C1BD4835-A6D0-4D4A-BD00-E4E6B5C1475E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C1BD4835-A6D0-4D4A-BD00-E4E6B5C1475E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C1BD4835-A6D0-4D4A-BD00-E4E6B5C1475E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C1BD4835-A6D0-4D4A-BD00-E4E6B5C1475E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{12F2EB2B-4876-499E-A5BE-FCA46ECBDC2C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{12F2EB2B-4876-499E-A5BE-FCA46ECBDC2C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{12F2EB2B-4876-499E-A5BE-FCA46ECBDC2C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{12F2EB2B-4876-499E-A5BE-FCA46ECBDC2C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1DAA4F9D-8E22-4392-943B-7C923C8D0B52}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1DAA4F9D-8E22-4392-943B-7C923C8D0B52}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1DAA4F9D-8E22-4392-943B-7C923C8D0B52}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1DAA4F9D-8E22-4392-943B-7C923C8D0B52}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{CFD7E920-6B76-49D5-9D4A-EFE1DF392363} = {E9FFA8AD-3163-4A0E-919A-8656E8A5E3C1}
+		{C1BD4835-A6D0-4D4A-BD00-E4E6B5C1475E} = {E9FFA8AD-3163-4A0E-919A-8656E8A5E3C1}
+		{12F2EB2B-4876-499E-A5BE-FCA46ECBDC2C} = {E9FFA8AD-3163-4A0E-919A-8656E8A5E3C1}
+		{1DAA4F9D-8E22-4392-943B-7C923C8D0B52} = {4D74B8F0-190B-4127-94EE-3E988002A677}
+	EndGlobalSection
+EndGlobal

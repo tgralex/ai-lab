@@ -1,0 +1,341 @@
+<div class="flex h-screen flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
+  <!-- Header -->
+  <header class="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
+    <div class="flex items-center gap-3">
+      <a routerLink="/" class="text-sm text-neutral-400 hover:text-neutral-600">← AI Lab</a>
+      <span class="text-neutral-300">/</span>
+      <h1 class="text-sm font-semibold">{{ workspace()?.name }}</h1>
+    </div>
+    <button (click)="exportCsv()" class="rounded-md border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900">
+      Export CSV
+    </button>
+  </header>
+
+  <div class="flex flex-1 overflow-hidden">
+    <!-- Sidebar -->
+    <aside class="flex w-64 shrink-0 flex-col overflow-y-auto border-r border-neutral-200 dark:border-neutral-800">
+      <div class="flex items-center justify-between px-3 py-2">
+        <span class="text-xs font-semibold uppercase tracking-wide text-neutral-400">Requests</span>
+        <button (click)="createRequest()" class="text-lg leading-none text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100">+</button>
+      </div>
+      <ul>
+        @for (r of requests(); track r.id) {
+          <li
+            class="group flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-900"
+            [class.bg-neutral-100]="selectedRequest()?.id === r.id"
+            [class.dark:bg-neutral-900]="selectedRequest()?.id === r.id"
+          >
+            <input
+              type="checkbox"
+              class="shrink-0"
+              [checked]="compareSelection().has(r.id)"
+              (click)="$event.stopPropagation(); toggleCompareSelection(r.id)"
+              title="Select for comparison"
+            />
+            <span (click)="selectRequest(r)" class="flex-1 truncate">{{ r.name }}</span>
+          </li>
+        }
+      </ul>
+      @if (compareSelection().size > 0) {
+        <div class="px-3 py-2">
+          <button (click)="loadComparison()" class="w-full rounded-md bg-neutral-900 px-2 py-1 text-xs text-white dark:bg-neutral-100 dark:text-neutral-900">
+            Compare {{ compareSelection().size }} selected
+          </button>
+        </div>
+      }
+
+      <div class="mt-4 flex items-center justify-between px-3 py-2">
+        <span class="text-xs font-semibold uppercase tracking-wide text-neutral-400">Execution Plans</span>
+        <button (click)="createPlan()" class="text-lg leading-none text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100">+</button>
+      </div>
+      <ul>
+        @for (p of plans(); track p.id) {
+          <li class="px-3 py-1.5">
+            <a [routerLink]="['/w', workspaceId(), 'plans', p.id]" class="block truncate text-sm hover:underline">{{ p.name }}</a>
+          </li>
+        }
+      </ul>
+    </aside>
+
+    <!-- Editor -->
+    <main class="flex-1 overflow-y-auto p-4">
+      @if (draft(); as d) {
+        <div class="mx-auto max-w-2xl space-y-4">
+          <div class="flex items-center justify-between">
+            <input
+              [ngModel]="d.name"
+              (ngModelChange)="draft.set({ ...d, name: $event }); markDirty()"
+              class="w-full border-none bg-transparent text-lg font-semibold focus:outline-none"
+            />
+            <div class="flex shrink-0 items-center gap-2">
+              <button (click)="cloneRequest()" class="rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900">Clone</button>
+              @if (confirmingDelete()) {
+                <span class="text-xs text-red-600">Delete "{{ selectedRequest()?.name }}"?</span>
+                <button (click)="confirmDelete()" class="rounded-md bg-red-600 px-2 py-1 text-xs text-white hover:bg-red-700">Confirm</button>
+                <button (click)="cancelDelete()" class="rounded-md border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700">Cancel</button>
+              } @else {
+                <button (click)="requestDelete()" class="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50">Delete</button>
+              }
+            </div>
+          </div>
+
+          <app-model-dropdown [models]="models()" [observedStats]="observedStats()" [providerId]="d.providerId" [modelId]="d.modelId" (modelChange)="onModelChange($event)" />
+
+          <div>
+            <label class="mb-1 block text-xs font-medium text-neutral-500">System Prompt</label>
+            <textarea
+              [ngModel]="d.systemPrompt"
+              (ngModelChange)="draft.set({ ...d, systemPrompt: $event }); markDirty()"
+              rows="2"
+              class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+            ></textarea>
+          </div>
+
+          <div>
+            <label class="mb-1 block text-xs font-medium text-neutral-500">Cached Context <span class="text-neutral-400">(shared prefix — eligible for prompt caching)</span></label>
+            <textarea
+              [ngModel]="d.cachedContextText"
+              (ngModelChange)="draft.set({ ...d, cachedContextText: $event }); markDirty()"
+              rows="3"
+              class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+            ></textarea>
+          </div>
+
+          <div>
+            <label class="mb-1 block text-xs font-medium text-neutral-500">
+              User Context <span class="text-neutral-400">— supports {{ '{{workspace.var}}' }}, {{ '{{RequestName.output}}' }}, {{ '{{RequestName.json.path}}' }}</span>
+            </label>
+            <textarea
+              [ngModel]="d.userContextText"
+              (ngModelChange)="draft.set({ ...d, userContextText: $event }); markDirty()"
+              rows="5"
+              class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+            ></textarea>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="mb-1 block text-xs font-medium text-neutral-500">Max Output Tokens</label>
+              <input
+                type="number"
+                [ngModel]="d.maxOutputTokens"
+                (ngModelChange)="draft.set({ ...d, maxOutputTokens: $event }); markDirty()"
+                class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+              />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-medium text-neutral-500">Reasoning Effort</label>
+              <select
+                [ngModel]="d.reasoningEffort"
+                (ngModelChange)="draft.set({ ...d, reasoningEffort: $event }); markDirty()"
+                class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+              >
+                <option [ngValue]="null">None</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-4">
+            <label class="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                [ngModel]="d.streamingEnabled"
+                (ngModelChange)="draft.set({ ...d, streamingEnabled: $event }); markDirty()"
+              />
+              Streaming enabled
+            </label>
+          </div>
+
+          <div>
+            <label class="mb-1 block text-xs font-medium text-neutral-500">Prompt Cache Key <span class="text-neutral-400">(optional)</span></label>
+            <input
+              [ngModel]="d.promptCacheKey"
+              (ngModelChange)="draft.set({ ...d, promptCacheKey: $event }); markDirty()"
+              class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+            />
+          </div>
+
+          <div>
+            <label class="mb-1 block text-xs font-medium text-neutral-500">Structured Output Schema <span class="text-neutral-400">(JSON schema, optional)</span></label>
+            <textarea
+              [ngModel]="d.structuredOutputSchema"
+              (ngModelChange)="draft.set({ ...d, structuredOutputSchema: $event }); markDirty()"
+              rows="3"
+              placeholder='{"type": "object", "properties": {...}}'
+              class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-900"
+            ></textarea>
+          </div>
+
+          <div class="flex gap-2 pt-2">
+            <button
+              (click)="saveRequest()"
+              [disabled]="!dirty()"
+              class="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
+            >
+              Save
+            </button>
+            <button
+              (click)="execute()"
+              [disabled]="executing() || dirty()"
+              class="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+            >
+              {{ executing() ? 'Executing…' : 'Execute' }}
+            </button>
+            @if (dirty()) {
+              <span class="self-center text-xs text-amber-600">Unsaved changes — save before executing</span>
+            }
+          </div>
+        </div>
+      } @else {
+        <div class="flex h-full items-center justify-center text-sm text-neutral-400">
+          Select a request, or create a new one.
+        </div>
+      }
+    </main>
+
+    <!-- Response panel -->
+    <aside class="flex w-[28rem] shrink-0 flex-col overflow-hidden border-l border-neutral-200 dark:border-neutral-800">
+      <nav class="flex border-b border-neutral-200 text-xs font-medium dark:border-neutral-800">
+        @for (tab of tabs; track tab) {
+          <button
+            (click)="activeTab.set(tab)"
+            class="flex-1 px-3 py-2 capitalize"
+            [class.border-b-2]="activeTab() === tab"
+            [class.border-neutral-900]="activeTab() === tab"
+            [class.dark:border-neutral-100]="activeTab() === tab"
+            [class.text-neutral-400]="activeTab() !== tab"
+          >
+            {{ tab }}
+          </button>
+        }
+      </nav>
+
+      <div class="flex-1 overflow-y-auto p-3 text-sm">
+        @switch (activeTab()) {
+          @case ('response') {
+            @if (currentRun(); as run) {
+              <div class="mb-2 flex items-center gap-2 text-xs">
+                <span
+                  class="rounded-full px-2 py-0.5 font-medium"
+                  [class.bg-green-100]="run.status === 3"
+                  [class.text-green-800]="run.status === 3"
+                  [class.bg-red-100]="run.status === 4"
+                  [class.text-red-800]="run.status === 4"
+                  [class.bg-neutral-100]="run.status !== 3 && run.status !== 4"
+                >
+                  {{ statusLabel(run.status) }}
+                </span>
+                @if (run.failure?.message) {
+                  <span class="truncate text-red-600">{{ run.failure?.message }}</span>
+                }
+              </div>
+            }
+            <button (click)="showRawJson.set(!showRawJson())" class="mb-2 text-xs text-blue-600 hover:underline">
+              {{ showRawJson() ? 'Show output text' : 'Show raw JSON' }}
+            </button>
+            <pre class="whitespace-pre-wrap break-words rounded-md bg-neutral-100 p-3 font-mono text-xs dark:bg-neutral-900">{{ showRawJson() ? rawResponseJson() : displayOutput() }}</pre>
+          }
+          @case ('stats') {
+            @if (currentRun() ?? selectedHistoryRun(); as run) {
+              <table class="w-full text-xs">
+                <tbody>
+                  <tr><td class="py-1 text-neutral-500">Total duration</td><td class="text-right font-mono">{{ formatTimeSpan(run.totalDuration) }}</td></tr>
+                  <tr><td class="py-1 text-neutral-500">TTFT</td><td class="text-right font-mono">{{ formatTimeSpan(run.timeToFirstOutputToken) }}</td></tr>
+                  <tr><td class="py-1 text-neutral-500">First response event</td><td class="text-right font-mono">{{ formatTimeSpan(run.timeToFirstResponseEvent) }}</td></tr>
+                  <tr><td class="py-1 text-neutral-500">Generation duration</td><td class="text-right font-mono">{{ formatTimeSpan(run.generationDuration) }}</td></tr>
+                  <tr><td class="py-1 text-neutral-500">Tokens/sec</td><td class="text-right font-mono">{{ outputTokensPerSecondDisplay(run) }}</td></tr>
+                  <tr><td class="py-1 text-neutral-500">Input tokens</td><td class="text-right font-mono">{{ run.usage.inputTokens }}</td></tr>
+                  <tr><td class="py-1 text-neutral-500">Cached tokens</td><td class="text-right font-mono">{{ run.usage.cachedInputTokens }} ({{ run.usage.cacheHitPercentage | number: '1.0-1' }}%)</td></tr>
+                  <tr><td class="py-1 text-neutral-500">Output tokens</td><td class="text-right font-mono">{{ run.usage.outputTokens }}</td></tr>
+                  <tr><td class="py-1 text-neutral-500">Reasoning tokens</td><td class="text-right font-mono">{{ run.usage.reasoningTokens }}</td></tr>
+                  <tr><td class="py-1 text-neutral-500">Estimated cost</td><td class="text-right font-mono">{{ formatCost(run.estimatedTotalCost) }}</td></tr>
+                  <tr><td class="py-1 text-neutral-500">Provider / model</td><td class="text-right font-mono">{{ run.providerId }} / {{ run.actualModel ?? run.requestedModel }}</td></tr>
+                </tbody>
+              </table>
+            } @else {
+              <p class="text-neutral-400">Execute the request to see statistics.</p>
+            }
+
+            <div class="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+              <label class="mb-1 block text-xs font-medium text-neutral-500">Benchmark (N runs)</label>
+              <div class="flex gap-2">
+                <input type="number" [ngModel]="benchmarkCount()" (ngModelChange)="benchmarkCount.set($event)" class="w-20 rounded-md border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900" />
+                <button (click)="runBenchmark()" [disabled]="benchmarking()" class="rounded-md bg-neutral-900 px-3 py-1 text-xs text-white dark:bg-neutral-100 dark:text-neutral-900">
+                  {{ benchmarking() ? 'Running…' : 'Run' }}
+                </button>
+              </div>
+              @if (benchmarkResult(); as b) {
+                <table class="mt-2 w-full text-xs">
+                  <thead><tr class="text-neutral-400"><th class="text-left font-normal">Metric</th><th class="text-right font-normal">Mean</th><th class="text-right font-normal">P90</th><th class="text-right font-normal">P95</th></tr></thead>
+                  <tbody>
+                    <tr><td>Duration</td><td class="text-right font-mono">{{ b.stats.duration.mean | number: '1.0-0' }}ms</td><td class="text-right font-mono">{{ b.stats.duration.p90 | number: '1.0-0' }}ms</td><td class="text-right font-mono">{{ b.stats.duration.p95 | number: '1.0-0' }}ms</td></tr>
+                    <tr><td>TTFT</td><td class="text-right font-mono">{{ b.stats.ttft.mean | number: '1.0-0' }}ms</td><td class="text-right font-mono">{{ b.stats.ttft.p90 | number: '1.0-0' }}ms</td><td class="text-right font-mono">{{ b.stats.ttft.p95 | number: '1.0-0' }}ms</td></tr>
+                    <tr><td>Cost</td><td class="text-right font-mono">{{ formatCost(b.stats.cost.mean) }}</td><td class="text-right font-mono">{{ formatCost(b.stats.cost.p90) }}</td><td class="text-right font-mono">{{ formatCost(b.stats.cost.p95) }}</td></tr>
+                  </tbody>
+                </table>
+                <p class="mt-1 text-neutral-400">{{ b.stats.successCount }}/{{ b.stats.runCount }} succeeded</p>
+              }
+            </div>
+          }
+          @case ('history') {
+            <ul class="divide-y divide-neutral-200 dark:divide-neutral-800">
+              @for (run of runs(); track run.id) {
+                <li (click)="viewHistoryRun(run)" class="cursor-pointer py-2 hover:bg-neutral-100 dark:hover:bg-neutral-900">
+                  <div class="flex items-center justify-between text-xs">
+                    <span>{{ run.startedAt | date: 'short' }}</span>
+                    <span [class.text-green-600]="run.status === 3" [class.text-red-600]="run.status === 4">{{ statusLabel(run.status) }}</span>
+                  </div>
+                  <div class="flex justify-between text-xs text-neutral-400">
+                    <span>{{ formatTimeSpan(run.totalDuration) }}</span>
+                    <span>{{ run.usage.totalTokens }} tok</span>
+                    <span>{{ formatCost(run.estimatedTotalCost) }}</span>
+                  </div>
+                </li>
+              }
+              @empty {
+                <p class="py-4 text-neutral-400">No runs yet.</p>
+              }
+            </ul>
+          }
+          @case ('compare') {
+            @if (comparisonRows().length > 0) {
+              <div class="overflow-x-auto">
+                <table class="w-full text-xs">
+                  <thead class="text-neutral-400">
+                    <tr>
+                      <th class="text-left font-normal">Request</th>
+                      <th class="text-left font-normal">Model</th>
+                      <th class="text-right font-normal">Total</th>
+                      <th class="text-right font-normal">TTFT</th>
+                      <th class="text-right font-normal">Tokens</th>
+                      <th class="text-right font-normal">Cost</th>
+                      <th class="text-right font-normal">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of comparisonRows(); track row.requestId) {
+                      <tr class="border-t border-neutral-100 dark:border-neutral-800">
+                        <td class="py-1">{{ row.requestName }}</td>
+                        <td>{{ row.model }}</td>
+                        <td class="text-right font-mono">{{ row.totalMs ? (row.totalMs | number: '1.0-0') + 'ms' : '—' }}</td>
+                        <td class="text-right font-mono">{{ row.ttftMs ? (row.ttftMs | number: '1.0-0') + 'ms' : '—' }}</td>
+                        <td class="text-right font-mono">{{ row.inputTokens + row.outputTokens }}</td>
+                        <td class="text-right font-mono">{{ formatCost(row.cost) }}</td>
+                        <td class="text-right">{{ row.status }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            } @else {
+              <p class="text-neutral-400">Check requests in the sidebar, then "Compare selected".</p>
+            }
+          }
+        }
+      </div>
+    </aside>
+  </div>
+</div>
