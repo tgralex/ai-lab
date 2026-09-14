@@ -54,6 +54,7 @@ app.MapBenchmarkEndpoints();
 app.MapComparisonEndpoints();
 app.MapExportEndpoints();
 app.MapExecutionPlanEndpoints();
+app.MapAttachmentEndpoints();
 
 // Explicit 404 for unmatched /api/* routes so they never fall through to the SPA's index.html.
 app.MapMethods("/api/{**rest}", ["GET", "POST", "PUT", "DELETE", "PATCH"], () => Results.NotFound(new { error = "Not found" }));

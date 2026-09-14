@@ -221,6 +221,16 @@ export interface ProviderModel {
   source: ModelRefreshSource;
 }
 
+export interface Attachment {
+  id: string;
+  workspaceId: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  sha256: string;
+  createdAt: string;
+}
+
 export interface ObservedModelStatistics {
   providerId: string;
   modelId: string;

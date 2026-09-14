@@ -9,6 +9,7 @@ import {
   ExecutionLevel, ExecutionPlanValidationResult,
 } from '../../core/models';
 import { formatTimeSpan, formatCost } from '../../shared/format';
+import { Icon } from '../../shared/icon';
 
 interface GraphNode {
   id: string;
@@ -32,7 +33,7 @@ const NODE_HEIGHT = 76;
 @Component({
   selector: 'app-plan-view',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, Icon],
   templateUrl: './plan-view.html',
 })
 export class PlanView implements OnInit {

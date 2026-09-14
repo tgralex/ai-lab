@@ -24,7 +24,7 @@ public class AiRequestExecutorTests
     public async Task ExecuteAsync_SuccessfulRun_PopulatesCompletedRun()
     {
         var fakeProvider = new FakeAiProvider();
-        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator());
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider());
 
         var run = await executor.ExecuteAsync(BuildRequest(), new BindingResolutionContext(), null, null, CancellationToken.None);
 
@@ -38,7 +38,7 @@ public class AiRequestExecutorTests
     public async Task ExecuteAsync_TracksFirstResponseEventAndFirstOutputTokenSeparately()
     {
         var fakeProvider = new FakeAiProvider { SimulatedDelay = TimeSpan.FromMilliseconds(20) };
-        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator());
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider());
 
         var run = await executor.ExecuteAsync(BuildRequest(), new BindingResolutionContext(), null, null, CancellationToken.None);
 
@@ -65,7 +65,7 @@ public class AiRequestExecutorTests
                 return new ProviderExecutionResult { Success = true, OutputText = "ab" };
             },
         };
-        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator());
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider());
 
         var run = await executor.ExecuteAsync(BuildRequest(), new BindingResolutionContext(), null, null, CancellationToken.None);
 
@@ -81,7 +81,7 @@ public class AiRequestExecutorTests
         {
             Behavior = (_, _, ct) => throw new OperationCanceledException(ct),
         };
-        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator());
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider());
 
         var run = await executor.ExecuteAsync(BuildRequest(), new BindingResolutionContext(), null, null, CancellationToken.None);
 
@@ -100,7 +100,7 @@ public class AiRequestExecutorTests
                 Failure = new Core.Execution.FailureInfo { Message = "boom", HttpStatus = 500 },
             },
         };
-        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator());
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider());
 
         var run = await executor.ExecuteAsync(BuildRequest(), new BindingResolutionContext(), null, null, CancellationToken.None);
 
@@ -112,7 +112,7 @@ public class AiRequestExecutorTests
     public async Task ExecuteAsync_UnknownProviderId_FailsWithoutCallingAnyProvider()
     {
         var fakeProvider = new FakeAiProvider();
-        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator());
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider());
 
         var run = await executor.ExecuteAsync(BuildRequest("nonexistent"), new BindingResolutionContext(), null, null, CancellationToken.None);
 
@@ -133,7 +133,7 @@ public class AiRequestExecutorTests
             },
         };
         var model = new ProviderModel { ProviderId = "openai", ModelId = "gpt-test", DisplayName = "GPT Test", InputPricePerMillion = 2m, OutputPricePerMillion = 10m };
-        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator());
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider());
 
         var run = await executor.ExecuteAsync(BuildRequest(), new BindingResolutionContext(), model, null, CancellationToken.None);
 
@@ -144,7 +144,7 @@ public class AiRequestExecutorTests
     public async Task ExecuteAsync_ResolvesWorkspaceVariableBindingsInUserContext()
     {
         var fakeProvider = new FakeAiProvider();
-        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator());
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider());
         var request = BuildRequest();
         request.UserContext = new ContentBlock { Text = "{{workspace.topic}}" };
         var bindingContext = new BindingResolutionContext { WorkspaceVariables = new Dictionary<string, string> { ["topic"] = "AI Lab" } };
@@ -153,5 +153,43 @@ public class AiRequestExecutorTests
 
         Assert.Equal("AI Lab", run.Snapshot.ResolvedUserContext);
         Assert.Equal("AI Lab", run.Snapshot.ResolvedBindings["workspace.topic"]);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AttachedFile_TextIsInlinedIntoResolvedContext()
+    {
+        var fakeProvider = new FakeAiProvider();
+        var attachmentProvider = new FakeAttachmentContentProvider();
+        var attachmentId = Guid.NewGuid();
+        attachmentProvider.Contents[attachmentId] = new AttachmentContent
+        {
+            Sha256 = "abc123",
+            Filename = "resume.txt",
+            ExtractedText = "Experienced engineer.",
+        };
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), attachmentProvider);
+        var request = BuildRequest();
+        request.UserContext = new ContentBlock { Text = "Candidate info:", AttachmentIds = [attachmentId] };
+
+        var run = await executor.ExecuteAsync(request, new BindingResolutionContext(), null, null, CancellationToken.None);
+
+        Assert.Contains("Candidate info:", run.Snapshot.ResolvedUserContext);
+        Assert.Contains("resume.txt", run.Snapshot.ResolvedUserContext);
+        Assert.Contains("Experienced engineer.", run.Snapshot.ResolvedUserContext);
+        Assert.Contains("abc123", run.Snapshot.AttachmentHashes);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_UnknownAttachment_SkippedGracefullyWithoutHash()
+    {
+        var fakeProvider = new FakeAiProvider();
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider());
+        var request = BuildRequest();
+        request.UserContext = new ContentBlock { Text = "Hello", AttachmentIds = [Guid.NewGuid()] };
+
+        var run = await executor.ExecuteAsync(request, new BindingResolutionContext(), null, null, CancellationToken.None);
+
+        Assert.Equal("Hello", run.Snapshot.ResolvedUserContext);
+        Assert.Empty(run.Snapshot.AttachmentHashes);
     }
 }

@@ -35,7 +35,7 @@ public class ExecutionPlanEngineTests
         var c = BuildRequest("C");
         var plan = BuildPlan([a, b, c], []);
         var fakeProvider = new FakeAiProvider { SimulatedDelay = TimeSpan.FromMilliseconds(50) };
-        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator()));
+        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider()));
         var requestsById = new[] { a, b, c }.ToDictionary(r => r.Id);
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -56,7 +56,7 @@ public class ExecutionPlanEngineTests
         var d = BuildRequest("D");
         var plan = BuildPlan([a, b, d], [(a.Id, d.Id), (b.Id, d.Id)]);
         var fakeProvider = new FakeAiProvider { SimulatedDelay = TimeSpan.FromMilliseconds(30) };
-        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator()));
+        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider()));
         var requestsById = new[] { a, b, d }.ToDictionary(r => r.Id);
 
         var run = await engine.ExecuteAsync(plan, requestsById, new BindingResolutionContext(), new Dictionary<Guid, Core.Models.ProviderModel?>(), new PlanExecutionOptions(), null, CancellationToken.None);
@@ -73,7 +73,7 @@ public class ExecutionPlanEngineTests
         var requests = Enumerable.Range(0, 6).Select(i => BuildRequest($"R{i}")).ToList();
         var plan = BuildPlan(requests, []);
         var fakeProvider = new FakeAiProvider { SimulatedDelay = TimeSpan.FromMilliseconds(40) };
-        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator()));
+        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider()));
         var requestsById = requests.ToDictionary(r => r.Id);
 
         await engine.ExecuteAsync(plan, requestsById, new BindingResolutionContext(), new Dictionary<Guid, Core.Models.ProviderModel?>(), new PlanExecutionOptions { GlobalMaxConcurrency = 2 }, null, CancellationToken.None);
@@ -91,7 +91,7 @@ public class ExecutionPlanEngineTests
 
         var openAiProvider = new FakeAiProvider("openai") { SimulatedDelay = TimeSpan.FromMilliseconds(40) };
         var anthropicProvider = new FakeAiProvider("anthropic") { SimulatedDelay = TimeSpan.FromMilliseconds(40) };
-        var engine = new ExecutionPlanEngine(new AiRequestExecutor([openAiProvider, anthropicProvider], new CostCalculator()));
+        var engine = new ExecutionPlanEngine(new AiRequestExecutor([openAiProvider, anthropicProvider], new CostCalculator(), new FakeAttachmentContentProvider()));
         var requestsById = allRequests.ToDictionary(r => r.Id);
 
         var options = new PlanExecutionOptions
@@ -118,7 +118,7 @@ public class ExecutionPlanEngineTests
         {
             ResultToReturn = new ProviderExecutionResult { Success = false, Failure = new Core.Execution.FailureInfo { Message = "boom" } },
         };
-        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator()));
+        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider()));
         var requestsById = new[] { a, b }.ToDictionary(r => r.Id);
 
         var run = await engine.ExecuteAsync(plan, requestsById, new BindingResolutionContext(), new Dictionary<Guid, Core.Models.ProviderModel?>(), new PlanExecutionOptions(), null, CancellationToken.None);
@@ -150,7 +150,7 @@ public class ExecutionPlanEngineTests
                 return Task.FromResult(new ProviderExecutionResult { Success = true, OutputText = $"received: {ctx.UserContextText}" });
             },
         };
-        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator()));
+        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider()));
         var requestsById = new[] { a, b }.ToDictionary(r => r.Id);
 
         var run = await engine.ExecuteAsync(plan, requestsById, new BindingResolutionContext(), new Dictionary<Guid, Core.Models.ProviderModel?>(), new PlanExecutionOptions(), null, CancellationToken.None);
@@ -178,7 +178,7 @@ public class ExecutionPlanEngineTests
                     : new ProviderExecutionResult { Success = true, OutputText = "ok" });
             },
         };
-        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator()));
+        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider()));
         var requestsById = new[] { a }.ToDictionary(r => r.Id);
 
         var run = await engine.ExecuteAsync(plan, requestsById, new BindingResolutionContext(), new Dictionary<Guid, Core.Models.ProviderModel?>(), new PlanExecutionOptions(), null, CancellationToken.None);
@@ -193,7 +193,7 @@ public class ExecutionPlanEngineTests
         var requests = Enumerable.Range(0, 3).Select(i => BuildRequest($"R{i}")).ToList();
         var plan = BuildPlan(requests, []);
         var fakeProvider = new FakeAiProvider { SimulatedDelay = TimeSpan.FromMilliseconds(50) };
-        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator()));
+        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider()));
         var requestsById = requests.ToDictionary(r => r.Id);
 
         var run = await engine.ExecuteAsync(plan, requestsById, new BindingResolutionContext(), new Dictionary<Guid, Core.Models.ProviderModel?>(), new PlanExecutionOptions(), null, CancellationToken.None);
@@ -223,7 +223,7 @@ public class ExecutionPlanEngineTests
                 return Task.FromResult(new ProviderExecutionResult { Success = true, OutputText = "parsed-resume-json" });
             },
         };
-        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator()));
+        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider()));
         var requestsById = new[] { a, b }.ToDictionary(r => r.Id);
 
         await engine.ExecuteAsync(plan, requestsById, new BindingResolutionContext(), new Dictionary<Guid, Core.Models.ProviderModel?>(), new PlanExecutionOptions(), null, CancellationToken.None);
@@ -247,7 +247,7 @@ public class ExecutionPlanEngineTests
                 return new ProviderExecutionResult { Success = true };
             },
         };
-        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator()));
+        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider()));
         var requestsById = requests.ToDictionary(r => r.Id);
 
         var run = await engine.ExecuteAsync(plan, requestsById, new BindingResolutionContext(), new Dictionary<Guid, Core.Models.ProviderModel?>(), new PlanExecutionOptions { GlobalMaxConcurrency = 1 }, null, cts.Token);

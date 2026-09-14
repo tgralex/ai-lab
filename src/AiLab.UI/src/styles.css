@@ -13,3 +13,42 @@ body {
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 13px;
 }
+
+/* Minimal Markdown typography for rendered AI responses — kept local since Tailwind's
+   typography plugin isn't installed and this is the only place it's needed. */
+.rendered-markdown h1, .rendered-markdown h2, .rendered-markdown h3 {
+  font-weight: 600;
+  margin: 0.6em 0 0.3em;
+}
+.rendered-markdown h1 { font-size: 1.25em; }
+.rendered-markdown h2 { font-size: 1.125em; }
+.rendered-markdown h3 { font-size: 1.05em; }
+.rendered-markdown p { margin: 0.5em 0; }
+.rendered-markdown ul, .rendered-markdown ol { margin: 0.5em 0; padding-left: 1.4em; }
+.rendered-markdown li { margin: 0.15em 0; }
+.rendered-markdown code {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  padding: 0.1em 0.3em;
+  border-radius: 0.25em;
+}
+.rendered-markdown pre {
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  padding: 0.6em;
+  border-radius: 0.4em;
+  overflow-x: auto;
+}
+.rendered-markdown pre code { background: none; padding: 0; }
+.rendered-markdown blockquote {
+  border-left: 3px solid currentColor;
+  opacity: 0.8;
+  margin: 0.5em 0;
+  padding-left: 0.8em;
+}
+.rendered-markdown a { text-decoration: underline; }
+.rendered-markdown table { border-collapse: collapse; margin: 0.5em 0; }
+.rendered-markdown th, .rendered-markdown td {
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  padding: 0.3em 0.6em;
+}

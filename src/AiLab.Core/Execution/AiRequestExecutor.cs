@@ -7,12 +7,16 @@ using AiLab.Core.Statistics;
 namespace AiLab.Core.Execution;
 
 /// <summary>
-/// Orchestrates a single AI request: resolves {{...}} bindings, selects the right IAiProvider by
-/// AiRequestDefinition.ProviderId, and turns the provider's streamed events + final result into a
-/// fully-populated ExecutionRun with a reproducible snapshot. Takes no dependency on EF Core or
-/// ASP.NET Core — callers (the API layer) gather BindingResolutionContext and persist the result.
+/// Orchestrates a single AI request: resolves {{...}} bindings, inlines attached-file text,
+/// selects the right IAiProvider by AiRequestDefinition.ProviderId, and turns the provider's
+/// streamed events + final result into a fully-populated ExecutionRun with a reproducible
+/// snapshot. Takes no dependency on EF Core or ASP.NET Core — callers (the API layer) gather
+/// BindingResolutionContext and persist the result.
 /// </summary>
-public sealed class AiRequestExecutor(IEnumerable<IAiProvider> providers, ICostCalculator costCalculator)
+public sealed class AiRequestExecutor(
+    IEnumerable<IAiProvider> providers,
+    ICostCalculator costCalculator,
+    IAttachmentContentProvider attachmentContentProvider)
 {
     public async Task<ExecutionRun> ExecuteAsync(
         AiRequestDefinition request,
@@ -29,15 +33,19 @@ public sealed class AiRequestExecutor(IEnumerable<IAiProvider> providers, ICostC
 
         var resolvedBindings = MergeBindings(systemResolution, cachedResolution, userResolution);
 
+        var (cachedText, cachedHashes) = await AppendAttachmentsAsync(cachedResolution.ResolvedText, request.CachedContext.AttachmentIds, cancellationToken);
+        var (userText, userHashes) = await AppendAttachmentsAsync(userResolution.ResolvedText, request.UserContext.AttachmentIds, cancellationToken);
+        var attachmentHashes = cachedHashes.Concat(userHashes).Distinct().ToList();
+
         var snapshot = new RequestSnapshot
         {
             ProviderId = request.ProviderId,
             ModelId = request.ModelId,
             SystemPrompt = request.SystemPrompt,
-            ResolvedCachedContext = cachedResolution.ResolvedText,
-            ResolvedUserContext = userResolution.ResolvedText,
+            ResolvedCachedContext = cachedText,
+            ResolvedUserContext = userText,
             ResolvedBindings = resolvedBindings,
-            AttachmentHashes = [], // attachment content inlining is not wired into provider calls yet (see plan's deferred items)
+            AttachmentHashes = attachmentHashes,
             ReasoningEffort = request.Reasoning?.Effort,
             Streaming = request.StreamingEnabled,
             MaxOutputTokens = request.MaxOutputTokens,
@@ -68,8 +76,8 @@ public sealed class AiRequestExecutor(IEnumerable<IAiProvider> providers, ICostC
         {
             ModelId = request.ModelId,
             SystemPrompt = systemResolution.ResolvedText,
-            CachedContextText = cachedResolution.ResolvedText,
-            UserContextText = userResolution.ResolvedText,
+            CachedContextText = cachedText,
+            UserContextText = userText,
             Attachments = [],
             Streaming = request.StreamingEnabled,
             MaxOutputTokens = request.MaxOutputTokens,
@@ -130,6 +138,37 @@ public sealed class AiRequestExecutor(IEnumerable<IAiProvider> providers, ICostC
                 run.RetryCount = run.Failure.RetryCount;
             }
         }
+    }
+
+    /// <summary>Appends each attached file's extracted text after the resolved prompt text, returning the combined text plus the hashes actually used (for the snapshot).</summary>
+    private async Task<(string Text, List<string> Hashes)> AppendAttachmentsAsync(string resolvedText, IReadOnlyList<Guid> attachmentIds, CancellationToken ct)
+    {
+        if (attachmentIds.Count == 0)
+        {
+            return (resolvedText, []);
+        }
+
+        var builder = new StringBuilder(resolvedText);
+        var hashes = new List<string>();
+
+        foreach (var id in attachmentIds)
+        {
+            var content = await attachmentContentProvider.GetContentAsync(id, ct);
+            if (content is null)
+            {
+                continue;
+            }
+
+            hashes.Add(content.Sha256);
+
+            if (!string.IsNullOrEmpty(content.ExtractedText))
+            {
+                builder.Append("\n\n--- Attached file: ").Append(content.Filename).Append(" ---\n");
+                builder.Append(content.ExtractedText);
+            }
+        }
+
+        return (builder.ToString(), hashes);
     }
 
     private static Dictionary<string, string> MergeBindings(params BindingResolutionResult[] resolutions)

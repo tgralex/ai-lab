@@ -4,11 +4,12 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ApiService } from '../../core/api.service';
 import { Workspace, ProviderCredentialStatus } from '../../core/models';
+import { Icon } from '../../shared/icon';
 
 @Component({
   selector: 'app-workspace-picker',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, Icon],
   templateUrl: './workspace-picker.html',
 })
 export class WorkspacePicker {

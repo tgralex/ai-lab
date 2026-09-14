@@ -1,27 +1,36 @@
-import { Component, inject, signal, computed, OnInit } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, OnDestroy, SecurityContext } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { DomSanitizer } from '@angular/platform-browser';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { marked } from 'marked';
 import { ApiService, CreateRequestBody } from '../../core/api.service';
 import {
   Workspace, AiRequestDefinition, ExecutionRun, ProviderModel, ExecutionStatus, ExecutionStatusLabel,
-  BenchmarkResponse, ComparisonRow, AiStreamEvent, ExecutionPlan, ObservedModelStatistics,
+  BenchmarkResponse, ComparisonRow, AiStreamEvent, ExecutionPlan, ObservedModelStatistics, Attachment,
 } from '../../core/models';
 import { ModelDropdown } from '../../shared/model-dropdown';
+import { PersistSizeDirective } from '../../shared/persist-size.directive';
+import { Icon } from '../../shared/icon';
 import { formatTimeSpan, formatCost, formatTokensPerSecond, timeSpanToMs } from '../../shared/format';
 
 type Tab = 'response' | 'stats' | 'history' | 'compare';
+type ResponseViewMode = 'rendered' | 'plain' | 'raw';
+
+const MIN_PANEL_WIDTH = 200;
+const MAX_PANEL_WIDTH = 700;
 
 @Component({
   selector: 'app-workspace-shell',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, ModelDropdown],
+  imports: [CommonModule, FormsModule, RouterLink, ModelDropdown, PersistSizeDirective, Icon],
   templateUrl: './workspace-shell.html',
 })
-export class WorkspaceShell implements OnInit {
+export class WorkspaceShell implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly sanitizer = inject(DomSanitizer);
 
   readonly ExecutionStatusLabel = ExecutionStatusLabel;
   readonly formatTimeSpan = formatTimeSpan;
@@ -34,17 +43,20 @@ export class WorkspaceShell implements OnInit {
   models = signal<ProviderModel[]>([]);
   observedStats = signal<ObservedModelStatistics[]>([]);
   plans = signal<ExecutionPlan[]>([]);
+  attachments = signal<Attachment[]>([]);
+  attachmentsById = computed(() => new Map(this.attachments().map(a => [a.id, a])));
 
   selectedRequest = signal<AiRequestDefinition | null>(null);
   draft = signal<CreateRequestBody | null>(null);
   dirty = signal(false);
+  uploadingCached = signal(false);
+  uploadingUser = signal(false);
 
   activeTab = signal<Tab>('response');
   readonly tabs: Tab[] = ['response', 'stats', 'history', 'compare'];
   executing = signal(false);
   streamingOutput = signal('');
   currentRun = signal<ExecutionRun | null>(null);
-  showRawJson = signal(false);
 
   runs = signal<ExecutionRun[]>([]);
   selectedHistoryRun = signal<ExecutionRun | null>(null);
@@ -56,7 +68,47 @@ export class WorkspaceShell implements OnInit {
   compareSelection = signal<Set<string>>(new Set());
   comparisonRows = signal<ComparisonRow[]>([]);
 
+  responseViewMode = signal<ResponseViewMode>('rendered');
+
+  // --- Panel widths (px), resizable by dragging, persisted across reloads ---
+  sidebarWidth = signal(loadPanelWidth('sidebar', 256));
+  responsePanelWidth = signal(loadPanelWidth('response', 448));
+  private resizingPanel: 'sidebar' | 'response' | null = null;
+  private resizeStartX = 0;
+  private resizeStartWidth = 0;
+  private readonly onResizeMove = (e: MouseEvent) => this.handleResizeMove(e);
+  private readonly onResizeUp = () => this.stopResize();
+
+  // --- Execution timer ---
+  elapsedMs = signal(0);
+  private executionStartedAt = 0;
+  private timerHandle: ReturnType<typeof setInterval> | null = null;
+
   displayOutput = computed(() => this.streamingOutput() || this.currentRun()?.output || this.selectedHistoryRun()?.output || '');
+
+  isJsonOutput = computed(() => {
+    const text = this.displayOutput().trim();
+    if (!text) return false;
+    try {
+      JSON.parse(text);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
+  prettyJsonOutput = computed(() => {
+    try {
+      return JSON.stringify(JSON.parse(this.displayOutput()), null, 2);
+    } catch {
+      return this.displayOutput();
+    }
+  });
+
+  renderedMarkdownHtml = computed(() => {
+    const raw = marked.parse(this.displayOutput(), { async: false }) as string;
+    return this.sanitizer.sanitize(SecurityContext.HTML, raw) ?? '';
+  });
 
   async ngOnInit() {
     const workspaceId = this.route.snapshot.paramMap.get('workspaceId')!;
@@ -64,19 +116,70 @@ export class WorkspaceShell implements OnInit {
     await this.loadAll();
   }
 
+  ngOnDestroy() {
+    this.stopTimer();
+    window.removeEventListener('mousemove', this.onResizeMove);
+    window.removeEventListener('mouseup', this.onResizeUp);
+  }
+
+  startResize(panel: 'sidebar' | 'response', event: MouseEvent) {
+    this.resizingPanel = panel;
+    this.resizeStartX = event.clientX;
+    this.resizeStartWidth = panel === 'sidebar' ? this.sidebarWidth() : this.responsePanelWidth();
+    window.addEventListener('mousemove', this.onResizeMove);
+    window.addEventListener('mouseup', this.onResizeUp);
+    event.preventDefault();
+  }
+
+  private handleResizeMove(e: MouseEvent) {
+    if (!this.resizingPanel) return;
+    const delta = e.clientX - this.resizeStartX;
+    // The response panel is on the right, so dragging it left (negative delta) should grow it.
+    const signedDelta = this.resizingPanel === 'sidebar' ? delta : -delta;
+    const newWidth = clamp(this.resizeStartWidth + signedDelta, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH);
+    if (this.resizingPanel === 'sidebar') {
+      this.sidebarWidth.set(newWidth);
+    } else {
+      this.responsePanelWidth.set(newWidth);
+    }
+  }
+
+  private stopResize() {
+    if (this.resizingPanel === 'sidebar') savePanelWidth('sidebar', this.sidebarWidth());
+    if (this.resizingPanel === 'response') savePanelWidth('response', this.responsePanelWidth());
+    this.resizingPanel = null;
+    window.removeEventListener('mousemove', this.onResizeMove);
+    window.removeEventListener('mouseup', this.onResizeUp);
+  }
+
+  private startTimer() {
+    this.executionStartedAt = Date.now();
+    this.elapsedMs.set(0);
+    this.timerHandle = setInterval(() => this.elapsedMs.set(Date.now() - this.executionStartedAt), 100);
+  }
+
+  private stopTimer() {
+    if (this.timerHandle) {
+      clearInterval(this.timerHandle);
+      this.timerHandle = null;
+    }
+  }
+
   async loadAll() {
-    const [workspace, requests, models, plans, observedStats] = await Promise.all([
+    const [workspace, requests, models, plans, observedStats, attachments] = await Promise.all([
       this.api.getWorkspace(this.workspaceId()),
       this.api.listRequests(this.workspaceId()),
       this.api.listModels(),
       this.api.listExecutionPlans(this.workspaceId()),
       this.api.observedModelStats(),
+      this.api.listAttachments(this.workspaceId()),
     ]);
     this.workspace.set(workspace);
     this.requests.set(requests);
     this.models.set(models);
     this.plans.set(plans);
     this.observedStats.set(observedStats);
+    this.attachments.set(attachments);
   }
 
   async selectRequest(request: AiRequestDefinition) {
@@ -124,6 +227,56 @@ export class WorkspaceShell implements OnInit {
     this.markDirty();
   }
 
+  // --- Attachments (cached/user context) ---
+
+  async uploadFile(target: 'cached' | 'user', event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = ''; // allow re-selecting the same file later
+    if (!file) return;
+
+    const uploading = target === 'cached' ? this.uploadingCached : this.uploadingUser;
+    uploading.set(true);
+    try {
+      const attachment = await this.api.uploadAttachment(this.workspaceId(), file);
+      this.attachments.set([attachment, ...this.attachments()]);
+      this.attachTo(target, attachment.id);
+    } finally {
+      uploading.set(false);
+    }
+  }
+
+  attachExisting(target: 'cached' | 'user', event: Event) {
+    const select = event.target as HTMLSelectElement;
+    const attachmentId = select.value;
+    select.value = '';
+    if (!attachmentId) return;
+    this.attachTo(target, attachmentId);
+  }
+
+  private attachTo(target: 'cached' | 'user', attachmentId: string) {
+    const d = this.draft();
+    if (!d) return;
+    const key = target === 'cached' ? 'cachedContextAttachmentIds' : 'userContextAttachmentIds';
+    const current = d[key] ?? [];
+    if (current.includes(attachmentId)) return;
+    this.draft.set({ ...d, [key]: [...current, attachmentId] });
+    this.markDirty();
+  }
+
+  removeAttachment(target: 'cached' | 'user', attachmentId: string) {
+    const d = this.draft();
+    if (!d) return;
+    const key = target === 'cached' ? 'cachedContextAttachmentIds' : 'userContextAttachmentIds';
+    this.draft.set({ ...d, [key]: (d[key] ?? []).filter(id => id !== attachmentId) });
+    this.markDirty();
+  }
+
+  attachmentLabel(id: string): string {
+    const a = this.attachmentsById().get(id);
+    return a ? `${a.filename} (${formatBytes(a.sizeBytes)})` : id;
+  }
+
   async saveRequest() {
     const selected = this.selectedRequest();
     const draft = this.draft();
@@ -169,6 +322,7 @@ export class WorkspaceShell implements OnInit {
     this.streamingOutput.set('');
     this.currentRun.set(null);
     this.activeTab.set('response');
+    this.startTimer();
 
     try {
       if (selected.streamingEnabled) {
@@ -186,6 +340,7 @@ export class WorkspaceShell implements OnInit {
       this.observedStats.set(await this.api.observedModelStats());
     } finally {
       this.executing.set(false);
+      this.stopTimer();
     }
   }
 
@@ -193,12 +348,14 @@ export class WorkspaceShell implements OnInit {
     const selected = this.selectedRequest();
     if (!selected) return;
     this.benchmarking.set(true);
+    this.startTimer();
     try {
       const result = await this.api.benchmark(selected.id, this.benchmarkCount());
       this.benchmarkResult.set(result);
       this.runs.set(await this.api.listRuns(selected.id));
     } finally {
       this.benchmarking.set(false);
+      this.stopTimer();
     }
   }
 
@@ -259,6 +416,15 @@ export class WorkspaceShell implements OnInit {
     if (!run?.outputTokensPerSecond) return '—';
     return formatTokensPerSecond(run.outputTokensPerSecond);
   }
+
+  tabIcon(tab: Tab): string {
+    switch (tab) {
+      case 'response': return 'eye';
+      case 'stats': return 'chartBar';
+      case 'history': return 'clock';
+      case 'compare': return 'scale';
+    }
+  }
 }
 
 function toDraft(request: AiRequestDefinition): CreateRequestBody {
@@ -276,6 +442,8 @@ function toDraft(request: AiRequestDefinition): CreateRequestBody {
     promptCacheKey: request.promptCacheKey,
     structuredOutputSchema: request.structuredOutputSchema,
     tags: request.tags,
+    cachedContextAttachmentIds: [...request.cachedContext.attachmentIds],
+    userContextAttachmentIds: [...request.userContext.attachmentIds],
   };
 }
 
@@ -287,4 +455,31 @@ function downloadText(content: string, filename: string, mimeType: string) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes}B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
+
+function loadPanelWidth(key: string, fallback: number): number {
+  try {
+    const saved = localStorage.getItem(`ailab.panel-width.${key}`);
+    return saved ? Number(saved) || fallback : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function savePanelWidth(key: string, width: number) {
+  try {
+    localStorage.setItem(`ailab.panel-width.${key}`, String(width));
+  } catch {
+    // Per-viewer convenience only — ignore storage failures.
+  }
 }

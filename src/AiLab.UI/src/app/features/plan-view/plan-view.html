@@ -1,19 +1,24 @@
 <div class="flex h-screen flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
   <header class="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
     <div class="flex items-center gap-3">
-      <a [routerLink]="['/w', workspaceId()]" class="text-sm text-neutral-400 hover:text-neutral-600">← Workspace</a>
+      <a [routerLink]="['/w', workspaceId()]" class="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-600">
+        <app-icon name="arrowLeft" class="h-3.5 w-3.5" /> Workspace
+      </a>
       <span class="text-neutral-300">/</span>
       <h1 class="text-sm font-semibold">{{ plan()?.name }}</h1>
     </div>
     <div class="flex gap-2">
       @if (!editing()) {
-        <button (click)="startEditing()" class="rounded-md border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900">Edit</button>
+        <button (click)="startEditing()" class="flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900">
+          <app-icon name="pencil" class="h-3.5 w-3.5" /> Edit
+        </button>
       }
       <button
         (click)="execute()"
         [disabled]="executing() || !validation()?.isValid"
-        class="rounded-md bg-blue-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
+        class="flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
       >
+        <app-icon [name]="executing() ? 'spinner' : 'play'" class="h-3.5 w-3.5" />
         {{ executing() ? 'Running…' : 'Execute Plan' }}
       </button>
     </div>
@@ -65,20 +70,28 @@
               <option [value]="r.id">{{ r.name }}</option>
             }
           </select>
-          <button (click)="addEdge()" class="rounded-md bg-neutral-900 px-2 text-xs text-white dark:bg-neutral-100 dark:text-neutral-900">+</button>
+          <button (click)="addEdge()" title="Add dependency" class="rounded-md bg-neutral-900 px-2 text-white dark:bg-neutral-100 dark:text-neutral-900">
+            <app-icon name="plus" class="h-3.5 w-3.5" />
+          </button>
         </div>
         <ul class="mb-4 space-y-1 text-xs">
           @for (d of editDependencies(); track d.from + d.to; let i = $index) {
             <li class="flex items-center justify-between">
               <span>{{ requestsById().get(d.from)?.name }} → {{ requestsById().get(d.to)?.name }}</span>
-              <button (click)="removeEdge(i)" class="text-red-500">✕</button>
+              <button (click)="removeEdge(i)" class="text-red-500">
+                <app-icon name="x" class="h-3.5 w-3.5" />
+              </button>
             </li>
           }
         </ul>
 
         <div class="flex gap-2">
-          <button (click)="saveEdits()" class="rounded-md bg-neutral-900 px-3 py-1 text-xs text-white dark:bg-neutral-100 dark:text-neutral-900">Save</button>
-          <button (click)="editing.set(false)" class="rounded-md border border-neutral-300 px-3 py-1 text-xs dark:border-neutral-700">Cancel</button>
+          <button (click)="saveEdits()" class="flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-1 text-xs text-white dark:bg-neutral-100 dark:text-neutral-900">
+            <app-icon name="save" class="h-3.5 w-3.5" /> Save
+          </button>
+          <button (click)="editing.set(false)" class="flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-1 text-xs dark:border-neutral-700">
+            <app-icon name="x" class="h-3.5 w-3.5" /> Cancel
+          </button>
         </div>
       </aside>
     }

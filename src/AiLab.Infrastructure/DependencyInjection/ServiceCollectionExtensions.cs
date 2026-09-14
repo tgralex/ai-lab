@@ -25,6 +25,9 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<ICredentialStore>(_ => new EnvCredentialStore(dataDirectory));
         services.AddSingleton(_ => new AttachmentStorage(dataDirectory));
+        services.AddSingleton<IFileContentExtractor, TextFileContentExtractor>();
+        services.AddSingleton<IFileContentExtractor, DocxFileContentExtractor>();
+        services.AddScoped<IAttachmentContentProvider, AttachmentContentProvider>();
 
         // Streaming responses can run long — no client-side timeout; CancellationToken governs lifetime instead.
         // Each provider gets its own typed-client registration (keyed by its concrete type, not the

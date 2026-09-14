@@ -19,7 +19,9 @@ public static class RequestEndpoints
         string? ReasoningEffort,
         string? PromptCacheKey,
         string? StructuredOutputSchema,
-        List<string>? Tags);
+        List<string>? Tags,
+        List<Guid>? CachedContextAttachmentIds,
+        List<Guid>? UserContextAttachmentIds);
 
     public static void MapRequestEndpoints(this IEndpointRouteBuilder app)
     {
@@ -41,8 +43,8 @@ public static class RequestEndpoints
                 ProviderId = body.ProviderId,
                 ModelId = body.ModelId,
                 SystemPrompt = body.SystemPrompt,
-                CachedContext = new ContentBlock { Text = body.CachedContextText ?? string.Empty },
-                UserContext = new ContentBlock { Text = body.UserContextText ?? string.Empty },
+                CachedContext = new ContentBlock { Text = body.CachedContextText ?? string.Empty, AttachmentIds = body.CachedContextAttachmentIds ?? [] },
+                UserContext = new ContentBlock { Text = body.UserContextText ?? string.Empty, AttachmentIds = body.UserContextAttachmentIds ?? [] },
                 StreamingEnabled = body.StreamingEnabled,
                 MaxOutputTokens = body.MaxOutputTokens,
                 Reasoning = string.IsNullOrEmpty(body.ReasoningEffort) ? null : new ReasoningConfig { Effort = body.ReasoningEffort },
@@ -80,8 +82,8 @@ public static class RequestEndpoints
             request.ProviderId = body.ProviderId;
             request.ModelId = body.ModelId;
             request.SystemPrompt = body.SystemPrompt;
-            request.CachedContext = new ContentBlock { Text = body.CachedContextText ?? string.Empty, AttachmentIds = request.CachedContext.AttachmentIds };
-            request.UserContext = new ContentBlock { Text = body.UserContextText ?? string.Empty, AttachmentIds = request.UserContext.AttachmentIds };
+            request.CachedContext = new ContentBlock { Text = body.CachedContextText ?? string.Empty, AttachmentIds = body.CachedContextAttachmentIds ?? request.CachedContext.AttachmentIds };
+            request.UserContext = new ContentBlock { Text = body.UserContextText ?? string.Empty, AttachmentIds = body.UserContextAttachmentIds ?? request.UserContext.AttachmentIds };
             request.StreamingEnabled = body.StreamingEnabled;
             request.MaxOutputTokens = body.MaxOutputTokens;
             request.Reasoning = string.IsNullOrEmpty(body.ReasoningEffort) ? null : new ReasoningConfig { Effort = body.ReasoningEffort };

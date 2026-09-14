@@ -5,7 +5,7 @@ import {
   Workspace, WorkspaceVariable, AiRequestDefinition, ExecutionRun, BenchmarkResponse,
   ComparisonRow, ProviderModel, ModelCatalogProviderStatus, ProviderCredentialStatus,
   ExecutionPlan, PlanDetailResponse, ExecutionPlanRun, AiStreamEvent, PlanExecutionEvent,
-  ObservedModelStatistics,
+  ObservedModelStatistics, Attachment,
 } from './models';
 
 export interface CreateRequestBody {
@@ -22,6 +22,8 @@ export interface CreateRequestBody {
   promptCacheKey?: string | null;
   structuredOutputSchema?: string | null;
   tags?: string[] | null;
+  cachedContextAttachmentIds?: string[] | null;
+  userContextAttachmentIds?: string[] | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -65,6 +67,21 @@ export class ApiService {
 
   exportWorkspace(workspaceId: string, format: 'csv' | 'json') {
     return firstValueFrom(this.http.get(`${this.base}/workspaces/${workspaceId}/export?format=${format}`, { responseType: 'text' }));
+  }
+
+  // Attachments
+  listAttachments(workspaceId: string) {
+    return firstValueFrom(this.http.get<Attachment[]>(`${this.base}/workspaces/${workspaceId}/attachments`));
+  }
+
+  uploadAttachment(workspaceId: string, file: File) {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    return firstValueFrom(this.http.post<Attachment>(`${this.base}/workspaces/${workspaceId}/attachments`, form));
+  }
+
+  deleteAttachment(id: string) {
+    return firstValueFrom(this.http.delete<void>(`${this.base}/attachments/${id}`));
   }
 
   // Requests
