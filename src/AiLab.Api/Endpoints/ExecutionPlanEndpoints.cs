@@ -118,9 +118,11 @@ public static class ExecutionPlanEndpoints
             var collector = new ChannelProgress(null, run => completedRuns.Add(run));
             var planRun = await engine.ExecuteAsync(plan!, requestsById!, bindingContext!, modelsForCost!, options, collector, ct);
 
+            // Uncancellable: a Stop mid-plan still leaves the plan run and its participating
+            // ExecutionRuns (including any Canceled ones) as real persisted history.
             db.ExecutionRuns.AddRange(completedRuns);
             db.ExecutionPlanRuns.Add(planRun);
-            await db.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(CancellationToken.None);
             return Results.Ok(planRun);
         });
 
@@ -146,6 +148,8 @@ public static class ExecutionPlanEndpoints
             var completedRuns = new List<ExecutionRun>();
             var progress = new ChannelProgress(channel.Writer, run => completedRuns.Add(run));
 
+            // Not tied to `ct`: the engine itself already reacts to `ct` internally per-node
+            // (recording Canceled runs rather than throwing) — the Task.Run wrapper shouldn't preempt that.
             var executeTask = Task.Run(async () =>
             {
                 try
@@ -156,18 +160,29 @@ public static class ExecutionPlanEndpoints
                 {
                     channel.Writer.Complete();
                 }
-            }, ct);
+            }, CancellationToken.None);
 
-            await foreach (var evt in channel.Reader.ReadAllAsync(ct))
+            try
             {
-                await sseWriter.WriteAsync("plan-event", evt, ct);
+                await foreach (var evt in channel.Reader.ReadAllAsync(ct))
+                {
+                    await sseWriter.WriteAsync("plan-event", evt, ct);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Client disconnected (Stop button) — fall through to still persist what completed below.
             }
 
             var planRun = await executeTask;
             db.ExecutionRuns.AddRange(completedRuns);
             db.ExecutionPlanRuns.Add(planRun);
-            await db.SaveChangesAsync(ct);
-            await sseWriter.WriteAsync("plan-completed", planRun, ct);
+            await db.SaveChangesAsync(CancellationToken.None);
+
+            if (!ct.IsCancellationRequested)
+            {
+                await sseWriter.WriteAsync("plan-completed", planRun, ct);
+            }
         });
     }
 

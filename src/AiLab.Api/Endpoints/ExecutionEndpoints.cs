@@ -29,8 +29,10 @@ public static class ExecutionEndpoints
             var model = await FindModelForCostAsync(request.ProviderId, request.ModelId, catalog, ct);
             var run = await executor.ExecuteAsync(request, bindingContext, model, progress: null, ct);
 
+            // A Stopped/disconnected request still leaves a real Canceled run behind — persist with
+            // an uncancellable token so that record isn't lost to the same disconnect that made it.
             db.ExecutionRuns.Add(run);
-            await db.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(CancellationToken.None);
 
             return Results.Ok(run);
         });
@@ -59,6 +61,8 @@ public static class ExecutionEndpoints
             var channel = Channel.CreateUnbounded<AiStreamEvent>();
             var progress = new ChannelProgress(channel.Writer);
 
+            // Not tied to `ct`: the executor itself already reacts to `ct` internally (recording a
+            // Canceled run rather than throwing) — the Task.Run wrapper shouldn't preempt that.
             var executeTask = Task.Run(async () =>
             {
                 try
@@ -69,18 +73,28 @@ public static class ExecutionEndpoints
                 {
                     channel.Writer.Complete();
                 }
-            }, ct);
+            }, CancellationToken.None);
 
-            await foreach (var streamEvent in channel.Reader.ReadAllAsync(ct))
+            try
             {
-                await sseWriter.WriteAsync("stream-event", streamEvent, ct);
+                await foreach (var streamEvent in channel.Reader.ReadAllAsync(ct))
+                {
+                    await sseWriter.WriteAsync("stream-event", streamEvent, ct);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Client disconnected (Stop button) — fall through to still persist the Canceled run below.
             }
 
             var run = await executeTask;
             db.ExecutionRuns.Add(run);
-            await db.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(CancellationToken.None);
 
-            await sseWriter.WriteAsync("run-completed", run, ct);
+            if (!ct.IsCancellationRequested)
+            {
+                await sseWriter.WriteAsync("run-completed", run, ct);
+            }
         });
     }
 

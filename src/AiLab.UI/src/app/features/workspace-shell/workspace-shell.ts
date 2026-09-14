@@ -4,7 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { DomSanitizer } from '@angular/platform-browser';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { marked } from 'marked';
-import { ApiService, CreateRequestBody } from '../../core/api.service';
+import { ApiService, CreateRequestBody, CancelableExecution } from '../../core/api.service';
 import {
   Workspace, AiRequestDefinition, ExecutionRun, ProviderModel, ExecutionStatus, ExecutionStatusLabel,
   BenchmarkResponse, ComparisonRow, AiStreamEvent, ExecutionPlan, ObservedModelStatistics, Attachment,
@@ -57,6 +57,9 @@ export class WorkspaceShell implements OnInit, OnDestroy {
   executing = signal(false);
   streamingOutput = signal('');
   currentRun = signal<ExecutionRun | null>(null);
+  private activeExecution: CancelableExecution<ExecutionRun> | null = null;
+  copied = signal(false);
+  private copiedTimeout: ReturnType<typeof setTimeout> | null = null;
 
   runs = signal<ExecutionRun[]>([]);
   selectedHistoryRun = signal<ExecutionRun | null>(null);
@@ -325,23 +328,29 @@ export class WorkspaceShell implements OnInit, OnDestroy {
     this.startTimer();
 
     try {
-      if (selected.streamingEnabled) {
-        const run = await this.api.executeRequestStream(selected.id, (evt: AiStreamEvent) => {
-          if (evt.kind === 2 && evt.textDelta) {
-            this.streamingOutput.set(this.streamingOutput() + evt.textDelta);
-          }
-        });
-        this.currentRun.set(run);
-      } else {
-        const run = await this.api.executeRequest(selected.id);
-        this.currentRun.set(run);
-      }
+      const handle = selected.streamingEnabled
+        ? this.api.executeRequestStream(selected.id, (evt: AiStreamEvent) => {
+            if (evt.kind === 2 && evt.textDelta) {
+              this.streamingOutput.set(this.streamingOutput() + evt.textDelta);
+            }
+          })
+        : this.api.executeRequest(selected.id);
+      this.activeExecution = handle;
+      const run = await handle.promise;
+      if (run) this.currentRun.set(run);
+      // A canceled run (or none) is still fetched via history below, since the server persists
+      // it even when the client-side promise resolves to null.
       this.runs.set(await this.api.listRuns(selected.id));
       this.observedStats.set(await this.api.observedModelStats());
     } finally {
+      this.activeExecution = null;
       this.executing.set(false);
       this.stopTimer();
     }
+  }
+
+  stopExecution() {
+    this.activeExecution?.cancel();
   }
 
   async runBenchmark() {
@@ -407,6 +416,18 @@ export class WorkspaceShell implements OnInit, OnDestroy {
       return run.rawProviderResponseJson;
     }
   });
+
+  async copyResponse() {
+    const text = this.responseViewMode() === 'raw' ? this.rawResponseJson()
+      : this.responseViewMode() === 'plain' ? this.displayOutput()
+      : this.responseViewMode() === 'rendered' && this.isJsonOutput() ? this.prettyJsonOutput()
+      : this.displayOutput();
+    if (!text) return;
+    await navigator.clipboard.writeText(text);
+    this.copied.set(true);
+    if (this.copiedTimeout) clearTimeout(this.copiedTimeout);
+    this.copiedTimeout = setTimeout(() => this.copied.set(false), 1500);
+  }
 
   statusLabel(status: ExecutionStatus): string {
     return ExecutionStatusLabel[status];

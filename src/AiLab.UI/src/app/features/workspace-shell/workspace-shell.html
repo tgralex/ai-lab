@@ -323,6 +323,10 @@
                   <span class="relative text-[7px] font-semibold tabular-nums">{{ (elapsedMs() / 1000).toFixed(1) }}</span>
                 </div>
                 <span>Running…</span>
+                <button
+                  (click)="stopExecution()"
+                  class="ml-auto flex items-center gap-1 rounded bg-red-100 px-2 py-0.5 font-medium text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 dark:hover:bg-red-900/60"
+                ><app-icon name="x" class="h-3.5 w-3.5" /> Stop</button>
               </div>
             }
             @if (currentRun(); as run) {
@@ -335,14 +339,14 @@
                   [class.text-red-800]="run.status === 4"
                   [class.bg-neutral-100]="run.status !== 3 && run.status !== 4"
                 >
-                  {{ statusLabel(run.status) }}
+                  {{ statusLabel(run.status) }}{{ run.totalDuration ? ' in ' + formatTimeSpan(run.totalDuration) : '' }}
                 </span>
                 @if (run.failure?.message) {
                   <span class="truncate text-red-600">{{ run.failure?.message }}</span>
                 }
               </div>
             }
-            <div class="mb-2 flex gap-1 text-xs">
+            <div class="mb-2 flex items-center gap-1 text-xs">
               <button
                 (click)="responseViewMode.set('rendered')"
                 class="flex items-center gap-1 rounded px-2 py-0.5"
@@ -361,6 +365,10 @@
                 [class.bg-neutral-200]="responseViewMode() === 'raw'"
                 [class.dark:bg-neutral-800]="responseViewMode() === 'raw'"
               ><app-icon name="code" class="h-3.5 w-3.5" /> Raw JSON</button>
+              <button
+                (click)="copyResponse()"
+                class="ml-auto flex items-center gap-1 rounded px-2 py-0.5 hover:bg-neutral-200 dark:hover:bg-neutral-800"
+              ><app-icon [name]="copied() ? 'check' : 'copy'" class="h-3.5 w-3.5" /> {{ copied() ? 'Copied' : 'Copy' }}</button>
             </div>
 
             @switch (responseViewMode()) {

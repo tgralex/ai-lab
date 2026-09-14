@@ -44,11 +44,17 @@ public static class BenchmarkEndpoints
             var runs = new List<ExecutionRun>();
             for (var i = 0; i < body.Count; i++)
             {
-                ct.ThrowIfCancellationRequested();
                 var run = await executor.ExecuteAsync(request, bindingContext, model, progress: null, ct);
                 runs.Add(run);
                 db.ExecutionRuns.Add(run);
-                await db.SaveChangesAsync(ct);
+                // Uncancellable: a Stop mid-benchmark still leaves the runs-so-far (including the
+                // just-Canceled one) as real persisted history, not silently dropped.
+                await db.SaveChangesAsync(CancellationToken.None);
+
+                if (run.Status == ExecutionStatus.Canceled)
+                {
+                    break;
+                }
             }
 
             var stats = BenchmarkAggregator.ComputeBenchmark(runs);

@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, Subscription } from 'rxjs';
 import {
   Workspace, WorkspaceVariable, AiRequestDefinition, ExecutionRun, BenchmarkResponse,
   ComparisonRow, ProviderModel, ModelCatalogProviderStatus, ProviderCredentialStatus,
@@ -24,6 +24,16 @@ export interface CreateRequestBody {
   tags?: string[] | null;
   cachedContextAttachmentIds?: string[] | null;
   userContextAttachmentIds?: string[] | null;
+}
+
+/**
+ * A promise that resolves to the completed result, plus a `cancel()` that aborts the in-flight
+ * request/stream. Cancelling resolves the promise with `null` rather than rejecting, since the
+ * server still persists a Canceled ExecutionRun — callers re-fetch run history to see it.
+ */
+export interface CancelableExecution<T> {
+  promise: Promise<T | null>;
+  cancel: () => void;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -114,28 +124,61 @@ export class ApiService {
     return firstValueFrom(this.http.get<ExecutionRun[]>(`${this.base}/requests/${requestId}/runs`));
   }
 
-  executeRequest(id: string) {
-    return firstValueFrom(this.http.post<ExecutionRun>(`${this.base}/requests/${id}/execute`, {}));
+  /** Cancel aborts the underlying HTTP request; the server still persists a Canceled run. */
+  executeRequest(id: string): CancelableExecution<ExecutionRun> {
+    let settled = false;
+    let resolveFn!: (v: ExecutionRun | null) => void;
+    let subscription: Subscription;
+    const promise = new Promise<ExecutionRun | null>((resolve, reject) => {
+      resolveFn = resolve;
+      subscription = this.http.post<ExecutionRun>(`${this.base}/requests/${id}/execute`, {}).subscribe({
+        next: (run) => { settled = true; resolve(run); },
+        error: (err) => { if (!settled) { settled = true; reject(err); } },
+      });
+    });
+    const cancel = () => {
+      if (settled) return;
+      settled = true;
+      subscription?.unsubscribe();
+      resolveFn(null);
+    };
+    return { promise, cancel };
   }
 
   benchmark(id: string, count: number) {
     return firstValueFrom(this.http.post<BenchmarkResponse>(`${this.base}/requests/${id}/benchmark`, { count }));
   }
 
-  /** Streams live AiStreamEvents via SSE, calling onEvent for each, and resolves with the final persisted ExecutionRun. */
-  executeRequestStream(id: string, onEvent: (evt: AiStreamEvent) => void): Promise<ExecutionRun> {
-    return new Promise((resolve, reject) => {
-      const source = new EventSource(`${this.base}/requests/${id}/execute-stream`);
+  /**
+   * Streams live AiStreamEvents via SSE, calling onEvent for each, and resolves with the final
+   * persisted ExecutionRun. Cancel closes the EventSource, which drops the server connection —
+   * the server still persists the resulting Canceled run.
+   */
+  executeRequestStream(id: string, onEvent: (evt: AiStreamEvent) => void): CancelableExecution<ExecutionRun> {
+    let settled = false;
+    let resolveFn!: (v: ExecutionRun | null) => void;
+    let source: EventSource;
+    const promise = new Promise<ExecutionRun | null>((resolve, reject) => {
+      resolveFn = resolve;
+      source = new EventSource(`${this.base}/requests/${id}/execute-stream`);
       source.addEventListener('stream-event', (e: MessageEvent) => onEvent(JSON.parse(e.data)));
       source.addEventListener('run-completed', (e: MessageEvent) => {
+        settled = true;
         source.close();
         resolve(JSON.parse(e.data));
       });
       source.onerror = () => {
         source.close();
-        reject(new Error('Stream connection error'));
+        if (!settled) { settled = true; reject(new Error('Stream connection error')); }
       };
     });
+    const cancel = () => {
+      if (settled) return;
+      settled = true;
+      source?.close();
+      resolveFn(null);
+    };
+    return { promise, cancel };
   }
 
   // Comparison / Diff
