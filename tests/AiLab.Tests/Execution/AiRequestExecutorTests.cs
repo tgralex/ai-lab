@@ -192,4 +192,122 @@ public class AiRequestExecutorTests
         Assert.Equal("Hello", run.Snapshot.ResolvedUserContext);
         Assert.Empty(run.Snapshot.AttachmentHashes);
     }
+
+    [Fact]
+    public async Task ExecuteAsync_ReasoningEffortUnset_ReasoningCapableModel_DefaultsToHigh()
+    {
+        var fakeProvider = new FakeAiProvider();
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider());
+        var model = new ProviderModel
+        {
+            ProviderId = "openai", ModelId = "gpt-test", DisplayName = "GPT Test",
+            SupportsReasoning = true, SupportedReasoningLevels = ["low", "medium", "high"],
+        };
+
+        var run = await executor.ExecuteAsync(BuildRequest(), new BindingResolutionContext(), model, null, CancellationToken.None);
+
+        Assert.Equal("high", run.Snapshot.ReasoningEffort);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReasoningEffortUnset_ExplicitMaxOutputTokensSet_StaysNull()
+    {
+        // Thinking/reasoning tokens count against the same output budget as the visible answer on
+        // every provider here — an explicit (especially small) MaxOutputTokens is a deliberate
+        // "keep this tight" signal, and auto-boosting reasoning into it can silently crowd out the
+        // whole answer (this is exactly how it broke for real: Gemini + maxOutputTokens=30 hit
+        // MAX_TOKENS with zero visible output once reasoning was defaulted on).
+        var fakeProvider = new FakeAiProvider();
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider());
+        var model = new ProviderModel
+        {
+            ProviderId = "gemini", ModelId = "gemini-test", DisplayName = "Gemini Test",
+            SupportsReasoning = true, SupportedReasoningLevels = ["low", "medium", "high"],
+        };
+        var request = BuildRequest("gemini");
+        request.MaxOutputTokens = 30;
+
+        var run = await executor.ExecuteAsync(request, new BindingResolutionContext(), model, null, CancellationToken.None);
+
+        Assert.Null(run.Snapshot.ReasoningEffort);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReasoningEffortUnset_ModelDoesNotSupportReasoning_StaysNull()
+    {
+        var fakeProvider = new FakeAiProvider();
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider());
+        var model = new ProviderModel { ProviderId = "openai", ModelId = "gpt-test", DisplayName = "GPT Test", SupportsReasoning = false };
+
+        var run = await executor.ExecuteAsync(BuildRequest(), new BindingResolutionContext(), model, null, CancellationToken.None);
+
+        Assert.Null(run.Snapshot.ReasoningEffort);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReasoningEffortUnset_NoModelForCost_StaysNull()
+    {
+        var fakeProvider = new FakeAiProvider();
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider());
+
+        var run = await executor.ExecuteAsync(BuildRequest(), new BindingResolutionContext(), null, null, CancellationToken.None);
+
+        Assert.Null(run.Snapshot.ReasoningEffort);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReasoningEffortAlreadySet_NotOverridden()
+    {
+        var fakeProvider = new FakeAiProvider();
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider());
+        var model = new ProviderModel
+        {
+            ProviderId = "openai", ModelId = "gpt-test", DisplayName = "GPT Test",
+            SupportsReasoning = true, SupportedReasoningLevels = ["low", "medium", "high"],
+        };
+        var request = BuildRequest();
+        request.Reasoning = new ReasoningConfig { Effort = "low" };
+
+        var run = await executor.ExecuteAsync(request, new BindingResolutionContext(), model, null, CancellationToken.None);
+
+        Assert.Equal("low", run.Snapshot.ReasoningEffort);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReasoningEffortUnset_AnthropicWithStructuredOutput_StaysNull()
+    {
+        // Anthropic's only structured-output mechanism is a forced tool call, and Anthropic
+        // rejects a forced tool_choice when thinking is enabled — so defaulting reasoning on here
+        // would only turn a reliable JSON response into a non-deterministic one. Plain-text
+        // Anthropic requests (no schema) still get the default; see the next test.
+        var fakeProvider = new FakeAiProvider();
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider());
+        var model = new ProviderModel
+        {
+            ProviderId = "anthropic", ModelId = "claude-test", DisplayName = "Claude Test",
+            SupportsReasoning = true, SupportedReasoningLevels = ["low", "medium", "high"],
+        };
+        var request = BuildRequest("anthropic");
+        request.StructuredOutputSchema = """{"type": "object", "properties": {"x": {"type": "string"}}}""";
+
+        var run = await executor.ExecuteAsync(request, new BindingResolutionContext(), model, null, CancellationToken.None);
+
+        Assert.Null(run.Snapshot.ReasoningEffort);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ReasoningEffortUnset_AnthropicWithoutStructuredOutput_DefaultsToHigh()
+    {
+        var fakeProvider = new FakeAiProvider();
+        var executor = new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider());
+        var model = new ProviderModel
+        {
+            ProviderId = "anthropic", ModelId = "claude-test", DisplayName = "Claude Test",
+            SupportsReasoning = true, SupportedReasoningLevels = ["low", "medium", "high"],
+        };
+
+        var run = await executor.ExecuteAsync(BuildRequest("anthropic"), new BindingResolutionContext(), model, null, CancellationToken.None);
+
+        Assert.Equal("high", run.Snapshot.ReasoningEffort);
+    }
 }

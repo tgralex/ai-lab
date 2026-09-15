@@ -133,6 +133,7 @@ export interface ExecutionRun {
   retryCount: number;
   snapshot: RequestSnapshot;
   outputTokensPerSecond: number | null;
+  isArchived: boolean;
 }
 
 export type AiStreamEventKind = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7; // Started FirstProtocolEvent OutputTextDelta ReasoningDelta ToolCallDelta UsageUpdate Completed Error

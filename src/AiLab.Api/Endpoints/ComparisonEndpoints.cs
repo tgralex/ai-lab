@@ -54,7 +54,10 @@ public static class ComparisonEndpoints
                     request.Name,
                     request.ProviderId,
                     request.ModelId,
-                    request.Reasoning?.Effort,
+                    // The actual effort used for that run (which may have been auto-defaulted —
+                    // see AiRequestExecutor.DefaultReasoningEffort) rather than the raw saved
+                    // request field, which is often left unset.
+                    latestRun?.Snapshot.ReasoningEffort ?? request.Reasoning?.Effort,
                     latestRun?.Id,
                     latestRun?.TotalDuration?.TotalMilliseconds,
                     latestRun?.TimeToFirstOutputToken?.TotalMilliseconds,

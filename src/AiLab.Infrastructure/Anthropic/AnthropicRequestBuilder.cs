@@ -39,7 +39,11 @@ public static class AnthropicRequestBuilder
         var body = new JsonObject
         {
             ["model"] = context.ModelId,
-            ["max_tokens"] = context.MaxOutputTokens ?? 4096, // Anthropic requires max_tokens on every call
+            // Anthropic requires max_tokens on every call, unlike OpenAI/Grok which can omit their
+            // cap entirely — fall back to the model's own catalog max before an arbitrary default,
+            // so a large multi-part task doesn't silently truncate just because the user didn't
+            // set an explicit "Max Output Tokens" on the request.
+            ["max_tokens"] = context.MaxOutputTokens ?? context.ModelMaxOutputTokens ?? 4096,
             ["stream"] = context.Streaming,
             ["messages"] = new JsonArray
             {
@@ -73,7 +77,14 @@ public static class AnthropicRequestBuilder
                     ["input_schema"] = schemaNode,
                 },
             };
-            body["tool_choice"] = new JsonObject { ["type"] = "tool", ["name"] = StructuredOutputToolName };
+
+            // Anthropic rejects a forced tool_choice outright when thinking is enabled ("Thinking
+            // may not be enabled when tool_choice forces tool use") — fall back to auto in that
+            // case. With a single tool defined and the system prompt demanding its shape, the
+            // model still calls it in practice; it's just no longer strictly guaranteed.
+            body["tool_choice"] = string.IsNullOrEmpty(context.ReasoningEffort)
+                ? new JsonObject { ["type"] = "tool", ["name"] = StructuredOutputToolName }
+                : new JsonObject { ["type"] = "auto" };
         }
 
         foreach (var (key, value) in context.ProviderSettings)

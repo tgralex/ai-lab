@@ -1,0 +1,15 @@
+<div
+  class="fixed inset-x-0 bottom-0 z-50 flex items-center justify-between gap-3 border-t border-neutral-200 bg-white/95 px-3 py-0.5 text-[10px] text-neutral-500 backdrop-blur dark:border-neutral-800 dark:bg-neutral-950/95 dark:text-neutral-400"
+>
+  <span>v{{ version }} &middot; built {{ buildTime | date: 'MMM d, y, h:mm a' }}</span>
+  <span class="flex items-center gap-1">
+    <span
+      class="h-1.5 w-1.5 rounded-full"
+      [class.bg-green-500]="backendAlive() === true"
+      [class.bg-red-500]="backendAlive() === false"
+      [class.bg-neutral-300]="backendAlive() === null"
+      [class.dark:bg-neutral-600]="backendAlive() === null"
+    ></span>
+    {{ backendAlive() === true ? 'Backend connected' : backendAlive() === false ? 'Backend unreachable' : 'Checking backend…' }}
+  </span>
+</div>

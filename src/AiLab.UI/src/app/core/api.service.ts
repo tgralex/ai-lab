@@ -41,6 +41,10 @@ export class ApiService {
   private readonly http = inject(HttpClient);
   private readonly base = '/api';
 
+  health() {
+    return firstValueFrom(this.http.get<{ status: string }>(`${this.base}/health`));
+  }
+
   // Providers
   providerStatus() {
     return firstValueFrom(this.http.get<Record<string, ProviderCredentialStatus>>(`${this.base}/providers/status`));
@@ -122,6 +126,14 @@ export class ApiService {
 
   listRuns(requestId: string) {
     return firstValueFrom(this.http.get<ExecutionRun[]>(`${this.base}/requests/${requestId}/runs`));
+  }
+
+  getRun(id: string) {
+    return firstValueFrom(this.http.get<ExecutionRun>(`${this.base}/runs/${id}`));
+  }
+
+  archiveRun(id: string, isArchived: boolean) {
+    return firstValueFrom(this.http.post<ExecutionRun>(`${this.base}/runs/${id}/archive`, { isArchived }));
   }
 
   /**

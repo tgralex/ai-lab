@@ -1,0 +1,112 @@
+@if (executingValue()) {
+  <div class="mb-3 flex items-center gap-2 text-xs text-neutral-500">
+    <div class="relative flex h-6 w-6 items-center justify-center">
+      <svg class="absolute h-6 w-6 animate-spin text-blue-600" viewBox="0 0 24 24" fill="none">
+        <circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
+        <path class="opacity-90" d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
+      </svg>
+      @if (showElapsedValue()) {
+        <span class="relative text-[7px] font-semibold tabular-nums">{{ (elapsedMsValue() / 1000).toFixed(1) }}</span>
+      }
+    </div>
+    <span>Running…</span>
+    @if (showStopValue()) {
+      <button
+        (click)="stop.emit()"
+        class="ml-auto flex items-center gap-1 rounded bg-red-100 px-2 py-0.5 font-medium text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 dark:hover:bg-red-900/60"
+      ><app-icon name="x" class="h-3.5 w-3.5" /> Stop</button>
+    }
+  </div>
+}
+
+@if (runValue(); as r) {
+  <div class="mb-2 flex items-center gap-2 text-xs">
+    <span
+      class="rounded-full px-2 py-0.5 font-medium"
+      [class.bg-green-100]="r.status === 3"
+      [class.text-green-800]="r.status === 3"
+      [class.bg-red-100]="r.status === 4"
+      [class.text-red-800]="r.status === 4"
+      [class.bg-neutral-100]="r.status !== 3 && r.status !== 4"
+    >
+      {{ statusLabel(r.status) }}{{ r.totalDuration ? ' in ' + formatTimeSpan(r.totalDuration) : '' }}
+    </span>
+    @if (r.failure?.message) {
+      <span class="truncate text-red-600">{{ r.failure?.message }}</span>
+    }
+  </div>
+  @if (isTruncated()) {
+    <div class="mb-2 rounded-md bg-amber-100 px-2 py-1 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+      ⚠ Output truncated — the model hit the max output token limit before finishing (increase "Max Output Tokens" to get a complete response).
+    </div>
+  }
+}
+
+@if (displayOutput()) {
+  <div class="mb-2 flex items-center gap-1 text-xs">
+    <button
+      (click)="responseViewMode.set('rendered')"
+      class="flex items-center gap-1 rounded px-2 py-0.5 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+      [class.bg-neutral-200]="responseViewMode() === 'rendered'"
+      [class.dark:bg-neutral-800]="responseViewMode() === 'rendered'"
+    ><app-icon name="eye" class="h-3.5 w-3.5" /> Rendered</button>
+    <button
+      (click)="responseViewMode.set('plain')"
+      class="flex items-center gap-1 rounded px-2 py-0.5 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+      [class.bg-neutral-200]="responseViewMode() === 'plain'"
+      [class.dark:bg-neutral-800]="responseViewMode() === 'plain'"
+    ><app-icon name="doc" class="h-3.5 w-3.5" /> Plain</button>
+    <button
+      (click)="responseViewMode.set('raw')"
+      class="flex items-center gap-1 rounded px-2 py-0.5 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+      [class.bg-neutral-200]="responseViewMode() === 'raw'"
+      [class.dark:bg-neutral-800]="responseViewMode() === 'raw'"
+    ><app-icon name="code" class="h-3.5 w-3.5" /> Raw JSON</button>
+    <button
+      (click)="copyResponse()"
+      class="ml-auto flex items-center gap-1 rounded px-2 py-0.5 hover:bg-neutral-200 dark:hover:bg-neutral-800"
+    ><app-icon [name]="copied() ? 'check' : 'copy'" class="h-3.5 w-3.5" /> {{ copied() ? 'Copied' : 'Copy' }}</button>
+  </div>
+
+  @switch (responseViewMode()) {
+    @case ('raw') {
+      <pre class="whitespace-pre-wrap break-words rounded-md bg-neutral-100 p-3 font-mono text-xs dark:bg-neutral-900">{{ rawResponseJson() }}</pre>
+    }
+    @case ('plain') {
+      <pre class="whitespace-pre-wrap break-words rounded-md bg-neutral-100 p-3 font-mono text-xs dark:bg-neutral-900">{{ displayOutput() }}</pre>
+    }
+    @default {
+      @if (isJsonOutput()) {
+        <pre class="whitespace-pre-wrap break-words rounded-md bg-neutral-100 p-3 font-mono text-xs dark:bg-neutral-900">{{ prettyJsonOutput() }}</pre>
+      } @else {
+        <div class="rendered-markdown rounded-md bg-neutral-100 p-3 text-sm dark:bg-neutral-900" [innerHTML]="renderedMarkdownHtml()"></div>
+      }
+    }
+  }
+} @else if (!executingValue()) {
+  <p class="text-neutral-400">Execute the request to see the response.</p>
+}
+
+@if (runValue(); as r) {
+  <table class="mt-4 w-full border-t border-neutral-200 pt-3 text-xs dark:border-neutral-800">
+    <tbody>
+      <tr><td class="py-1 text-neutral-500">Total duration</td><td class="text-right font-mono">{{ formatTimeSpan(r.totalDuration) }}</td></tr>
+      <tr><td class="py-1 text-neutral-500">TTFT</td><td class="text-right font-mono">{{ formatTimeSpan(r.timeToFirstOutputToken) }}</td></tr>
+      <tr><td class="py-1 text-neutral-500">First response event</td><td class="text-right font-mono">{{ formatTimeSpan(r.timeToFirstResponseEvent) }}</td></tr>
+      <tr><td class="py-1 text-neutral-500">Generation duration</td><td class="text-right font-mono">{{ formatTimeSpan(r.generationDuration) }}</td></tr>
+      <tr><td class="py-1 text-neutral-500">Tokens/sec</td><td class="text-right font-mono">{{ outputTokensPerSecondDisplay() }}</td></tr>
+      <tr><td class="py-1 text-neutral-500">Input tokens</td><td class="text-right font-mono">{{ r.usage.inputTokens }}</td></tr>
+      <tr>
+        <td class="py-1 text-neutral-500" title="Provider auto-caching only hits on a repeat call with the identical prompt prefix (usually needs 1024+ tokens and a recent prior call, ~5-10 min TTL). New/changed prompts show 0 on the first call.">
+          Cached tokens ⓘ
+        </td>
+        <td class="text-right font-mono">{{ r.usage.cachedInputTokens }} ({{ r.usage.cacheHitPercentage | number: '1.0-1' }}%)</td>
+      </tr>
+      <tr><td class="py-1 text-neutral-500">Output tokens</td><td class="text-right font-mono">{{ r.usage.outputTokens }}</td></tr>
+      <tr><td class="py-1 text-neutral-500">Reasoning tokens</td><td class="text-right font-mono">{{ r.usage.reasoningTokens }}</td></tr>
+      <tr><td class="py-1 text-neutral-500">Reasoning effort</td><td class="text-right font-mono capitalize">{{ r.snapshot.reasoningEffort ?? '—' }}</td></tr>
+      <tr><td class="py-1 text-neutral-500">Estimated cost</td><td class="text-right font-mono">{{ formatCost(r.estimatedTotalCost) }}</td></tr>
+      <tr><td class="py-1 text-neutral-500">Provider / model</td><td class="text-right font-mono">{{ r.providerId }} / {{ r.actualModel ?? r.requestedModel }}</td></tr>
+    </tbody>
+  </table>
+}

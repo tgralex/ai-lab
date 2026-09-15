@@ -1,9 +1,7 @@
-import { Component, inject, signal, computed, OnInit, OnDestroy, SecurityContext } from '@angular/core';
+import { Component, inject, signal, computed, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { DomSanitizer } from '@angular/platform-browser';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { marked } from 'marked';
 import { ApiService, CreateRequestBody, CancelableExecution } from '../../core/api.service';
 import {
   Workspace, AiRequestDefinition, ExecutionRun, ProviderModel, ExecutionStatus, ExecutionStatusLabel,
@@ -14,10 +12,10 @@ import { PersistSizeDirective } from '../../shared/persist-size.directive';
 import { ClickOutsideDirective } from '../../shared/click-outside.directive';
 import { Icon } from '../../shared/icon';
 import { ProviderIcon } from '../../shared/provider-icon';
-import { formatTimeSpan, formatCost, formatTokensPerSecond, timeSpanToMs } from '../../shared/format';
+import { RunDetail } from '../../shared/run-detail';
+import { formatTimeSpan, formatCost, timeSpanToMs } from '../../shared/format';
 
-type Tab = 'response' | 'stats' | 'history' | 'compare' | 'models';
-type ResponseViewMode = 'rendered' | 'plain' | 'raw';
+type Tab = 'current' | 'history' | 'compare' | 'models';
 
 interface MultiModelRunRow {
   providerId: string;
@@ -34,19 +32,17 @@ const MAX_PANEL_WIDTH = 700;
 @Component({
   selector: 'app-workspace-shell',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, ModelDropdown, PersistSizeDirective, ClickOutsideDirective, Icon, ProviderIcon],
+  imports: [CommonModule, FormsModule, RouterLink, ModelDropdown, PersistSizeDirective, ClickOutsideDirective, Icon, ProviderIcon, RunDetail],
   templateUrl: './workspace-shell.html',
 })
 export class WorkspaceShell implements OnInit, OnDestroy {
   private readonly api = inject(ApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly sanitizer = inject(DomSanitizer);
 
   readonly ExecutionStatusLabel = ExecutionStatusLabel;
   readonly formatTimeSpan = formatTimeSpan;
   readonly formatCost = formatCost;
-  readonly formatTokensPerSecond = formatTokensPerSecond;
 
   workspaceId = signal<string>('');
   workspace = signal<Workspace | null>(null);
@@ -63,22 +59,41 @@ export class WorkspaceShell implements OnInit, OnDestroy {
   uploadingCached = signal(false);
   uploadingUser = signal(false);
 
-  activeTab = signal<Tab>('response');
-  readonly tabs: Tab[] = ['response', 'stats', 'history', 'compare', 'models'];
+  activeTab = signal<Tab>('current');
+  readonly tabs: Tab[] = ['current', 'history', 'compare', 'models'];
   executing = signal(false);
   streamingOutput = signal('');
   currentRun = signal<ExecutionRun | null>(null);
   private activeExecution: CancelableExecution<ExecutionRun> | null = null;
-  copied = signal(false);
-  private copiedTimeout: ReturnType<typeof setTimeout> | null = null;
 
   compareModelsOpen = signal(false);
   compareModelsSelection = signal<ModelRef[]>([]);
   multiModelRuns = signal<MultiModelRunRow[]>([]);
   multiModelRunning = computed(() => this.multiModelRuns().some(r => r.status === 'running'));
+  selectedMultiModelIndex = signal<number | null>(null);
 
   runs = signal<ExecutionRun[]>([]);
   selectedHistoryRun = signal<ExecutionRun | null>(null);
+  showArchivedRuns = signal(false);
+  visibleHistoryRuns = computed(() => this.runs().filter(r => this.showArchivedRuns() || !r.isArchived));
+  hiddenArchivedCount = computed(() => this.runs().filter(r => r.isArchived).length);
+
+  /** Compare several runs of the SAME request (e.g. different models/attempts at one task) —
+   * more useful than the Compare tab's "latest run of each different request" comparison. Also
+   * doubles as the selection for bulk archive/unarchive. */
+  historyCompareSelection = signal<Set<string>>(new Set());
+  historyCompareMode = signal(false);
+  allVisibleHistoryRunsSelected = computed(() => {
+    const visible = this.visibleHistoryRuns();
+    return visible.length > 0 && visible.every(r => this.historyCompareSelection().has(r.id));
+  });
+  /** Whether every currently-selected run is already archived — flips the bulk action between "Archive" and "Unarchive". */
+  selectedHistoryRunsAllArchived = computed(() => {
+    const ids = this.historyCompareSelection();
+    const selected = this.runs().filter(r => ids.has(r.id));
+    return selected.length > 0 && selected.every(r => r.isArchived);
+  });
+  historyComparisonRuns = computed(() => this.runs().filter(r => this.historyCompareSelection().has(r.id)));
 
   benchmarkCount = signal(5);
   benchmarking = signal(false);
@@ -86,8 +101,10 @@ export class WorkspaceShell implements OnInit, OnDestroy {
 
   compareSelection = signal<Set<string>>(new Set());
   comparisonRows = signal<ComparisonRow[]>([]);
-
-  responseViewMode = signal<ResponseViewMode>('rendered');
+  selectedComparisonRequestId = signal<string | null>(null);
+  selectedComparisonRunId = signal<string | null>(null);
+  selectedComparisonRun = signal<ExecutionRun | null>(null);
+  loadingComparisonRun = signal(false);
 
   // --- Panel widths (px), resizable by dragging, persisted across reloads ---
   sidebarWidth = signal(loadPanelWidth('sidebar', 256));
@@ -102,32 +119,6 @@ export class WorkspaceShell implements OnInit, OnDestroy {
   elapsedMs = signal(0);
   private executionStartedAt = 0;
   private timerHandle: ReturnType<typeof setInterval> | null = null;
-
-  displayOutput = computed(() => this.streamingOutput() || this.currentRun()?.output || this.selectedHistoryRun()?.output || '');
-
-  isJsonOutput = computed(() => {
-    const text = this.displayOutput().trim();
-    if (!text) return false;
-    try {
-      JSON.parse(text);
-      return true;
-    } catch {
-      return false;
-    }
-  });
-
-  prettyJsonOutput = computed(() => {
-    try {
-      return JSON.stringify(JSON.parse(this.displayOutput()), null, 2);
-    } catch {
-      return this.displayOutput();
-    }
-  });
-
-  renderedMarkdownHtml = computed(() => {
-    const raw = marked.parse(this.displayOutput(), { async: false }) as string;
-    return this.sanitizer.sanitize(SecurityContext.HTML, raw) ?? '';
-  });
 
   async ngOnInit() {
     const workspaceId = this.route.snapshot.paramMap.get('workspaceId')!;
@@ -208,9 +199,41 @@ export class WorkspaceShell implements OnInit, OnDestroy {
     this.streamingOutput.set('');
     this.currentRun.set(null);
     this.selectedHistoryRun.set(null);
+    this.historyCompareSelection.set(new Set());
+    this.historyCompareMode.set(false);
     this.benchmarkResult.set(null);
-    this.activeTab.set('response');
-    this.runs.set(await this.api.listRuns(request.id));
+    this.activeTab.set('current');
+    this.applyRuns(await this.api.listRuns(request.id));
+  }
+
+  /**
+   * Sets the run list and keeps the History tab's selection valid — defaults to the latest
+   * non-archived run (already ordered by StartedAt desc server-side) when nothing is selected or
+   * the previously selected run fell out of the list, but otherwise preserves the user's manual
+   * selection across unrelated refreshes (e.g. a benchmark run while viewing an older run).
+   */
+  private applyRuns(list: ExecutionRun[]) {
+    this.runs.set(list);
+    const current = this.selectedHistoryRun();
+    if (!current || !list.some(r => r.id === current.id)) {
+      this.selectedHistoryRun.set(list.find(r => !r.isArchived) ?? list[0] ?? null);
+    }
+  }
+
+  toggleShowArchivedRuns() {
+    this.showArchivedRuns.set(!this.showArchivedRuns());
+  }
+
+  async setRunArchived(run: ExecutionRun, isArchived: boolean) {
+    const updated = await this.api.archiveRun(run.id, isArchived);
+    this.runs.set(this.runs().map(r => (r.id === updated.id ? updated : r)));
+    // If the archived run was selected and is now hidden, fall back to the next visible run so
+    // the detail panel doesn't keep showing a row that just disappeared from the list.
+    if (this.selectedHistoryRun()?.id === updated.id && isArchived && !this.showArchivedRuns()) {
+      this.selectedHistoryRun.set(this.visibleHistoryRuns()[0] ?? null);
+    } else if (this.selectedHistoryRun()?.id === updated.id) {
+      this.selectedHistoryRun.set(updated);
+    }
   }
 
   async createRequest() {
@@ -340,7 +363,7 @@ export class WorkspaceShell implements OnInit, OnDestroy {
     this.executing.set(true);
     this.streamingOutput.set('');
     this.currentRun.set(null);
-    this.activeTab.set('response');
+    this.activeTab.set('current');
     this.startTimer();
 
     try {
@@ -356,7 +379,7 @@ export class WorkspaceShell implements OnInit, OnDestroy {
       if (run) this.currentRun.set(run);
       // A canceled run (or none) is still fetched via history below, since the server persists
       // it even when the client-side promise resolves to null.
-      this.runs.set(await this.api.listRuns(selected.id));
+      this.applyRuns(await this.api.listRuns(selected.id));
       this.observedStats.set(await this.api.observedModelStats());
     } finally {
       this.activeExecution = null;
@@ -384,6 +407,7 @@ export class WorkspaceShell implements OnInit, OnDestroy {
       streamingOutput: '',
       handle: null,
     })));
+    this.selectedMultiModelIndex.set(0);
 
     const patchRow = (i: number, patch: Partial<MultiModelRunRow>) => {
       this.multiModelRuns.set(this.multiModelRuns().map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
@@ -408,8 +432,12 @@ export class WorkspaceShell implements OnInit, OnDestroy {
     });
 
     await Promise.all(tasks);
-    this.runs.set(await this.api.listRuns(selected.id));
+    this.applyRuns(await this.api.listRuns(selected.id));
     this.observedStats.set(await this.api.observedModelStats());
+  }
+
+  selectMultiModelRow(i: number) {
+    this.selectedMultiModelIndex.set(i);
   }
 
   stopMultiModelRun(i: number) {
@@ -428,7 +456,7 @@ export class WorkspaceShell implements OnInit, OnDestroy {
     try {
       const result = await this.api.benchmark(selected.id, this.benchmarkCount());
       this.benchmarkResult.set(result);
-      this.runs.set(await this.api.listRuns(selected.id));
+      this.applyRuns(await this.api.listRuns(selected.id));
     } finally {
       this.benchmarking.set(false);
       this.stopTimer();
@@ -437,9 +465,38 @@ export class WorkspaceShell implements OnInit, OnDestroy {
 
   viewHistoryRun(run: ExecutionRun) {
     this.selectedHistoryRun.set(run);
-    this.currentRun.set(null);
-    this.streamingOutput.set('');
-    this.activeTab.set('response');
+    this.historyCompareMode.set(false);
+  }
+
+  toggleHistoryCompareSelection(id: string) {
+    const set = new Set(this.historyCompareSelection());
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    this.historyCompareSelection.set(set);
+  }
+
+  toggleSelectAllHistoryRuns() {
+    this.historyCompareSelection.set(
+      this.allVisibleHistoryRunsSelected() ? new Set() : new Set(this.visibleHistoryRuns().map(r => r.id)),
+    );
+  }
+
+  async archiveOrUnarchiveSelectedHistoryRuns() {
+    const ids = this.historyCompareSelection();
+    if (ids.size === 0) return;
+    const targetArchivedValue = !this.selectedHistoryRunsAllArchived();
+    const targets = this.runs().filter(r => ids.has(r.id) && r.isArchived !== targetArchivedValue);
+    await Promise.all(targets.map(r => this.setRunArchived(r, targetArchivedValue)));
+    this.historyCompareSelection.set(new Set());
+  }
+
+  startHistoryComparison() {
+    if (this.historyCompareSelection().size < 2) return;
+    this.historyCompareMode.set(true);
+  }
+
+  exitHistoryComparison() {
+    this.historyCompareMode.set(false);
   }
 
   toggleCompareSelection(id: string) {
@@ -452,8 +509,39 @@ export class WorkspaceShell implements OnInit, OnDestroy {
   async loadComparison() {
     const ids = Array.from(this.compareSelection());
     if (ids.length === 0) return;
-    this.comparisonRows.set(await this.api.comparison(ids));
+    const rows = await this.api.comparison(ids);
+    this.comparisonRows.set(rows);
     this.activeTab.set('compare');
+    const withRun = rows.find(r => r.runId);
+    if (withRun) {
+      await this.selectComparisonRow(withRun);
+    } else {
+      this.selectedComparisonRequestId.set(null);
+      this.selectedComparisonRunId.set(null);
+      this.selectedComparisonRun.set(null);
+    }
+  }
+
+  /** Compare rows only carry summary metrics — fetch the full run so the shared run-detail view can render it. */
+  async selectComparisonRow(row: ComparisonRow) {
+    this.selectedComparisonRequestId.set(row.requestId);
+    this.selectedComparisonRunId.set(row.runId);
+    if (!row.runId) {
+      this.selectedComparisonRun.set(null);
+      return;
+    }
+    this.loadingComparisonRun.set(true);
+    try {
+      const run = await this.api.getRun(row.runId);
+      // Ignore a stale response if the user clicked another row before this fetch resolved.
+      if (this.selectedComparisonRunId() === row.runId) {
+        this.selectedComparisonRun.set(run);
+      }
+    } finally {
+      if (this.selectedComparisonRunId() === row.runId) {
+        this.loadingComparisonRun.set(false);
+      }
+    }
   }
 
   async exportCsv() {
@@ -474,51 +562,43 @@ export class WorkspaceShell implements OnInit, OnDestroy {
     void this.router.navigate(['/w', this.workspaceId(), 'plans', plan.id]);
   }
 
-  rawResponseJson = computed(() => {
-    const run = this.currentRun() ?? this.selectedHistoryRun();
-    if (!run?.rawProviderResponseJson) return '';
-    try {
-      return JSON.stringify(JSON.parse(run.rawProviderResponseJson), null, 2);
-    } catch {
-      return run.rawProviderResponseJson;
-    }
-  });
-
-  async copyResponse() {
-    const text = this.responseViewMode() === 'raw' ? this.rawResponseJson()
-      : this.responseViewMode() === 'plain' ? this.displayOutput()
-      : this.responseViewMode() === 'rendered' && this.isJsonOutput() ? this.prettyJsonOutput()
-      : this.displayOutput();
-    if (!text) return;
-    await navigator.clipboard.writeText(text);
-    this.copied.set(true);
-    if (this.copiedTimeout) clearTimeout(this.copiedTimeout);
-    this.copiedTimeout = setTimeout(() => this.copied.set(false), 1500);
-  }
-
-  private static readonly TRUNCATED_FINISH_REASONS = new Set(['max_tokens', 'incomplete', 'length']);
-
-  isTruncated(run: ExecutionRun): boolean {
-    return !!run.finishReason && WorkspaceShell.TRUNCATED_FINISH_REASONS.has(run.finishReason);
-  }
-
   statusLabel(status: ExecutionStatus): string {
     return ExecutionStatusLabel[status];
   }
 
-  outputTokensPerSecondDisplay(run: ExecutionRun | null): string {
-    if (!run?.outputTokensPerSecond) return '—';
-    return formatTokensPerSecond(run.outputTokensPerSecond);
-  }
-
   tabIcon(tab: Tab): string {
     switch (tab) {
-      case 'response': return 'eye';
-      case 'stats': return 'chartBar';
+      case 'current': return 'eye';
       case 'history': return 'clock';
       case 'compare': return 'scale';
       case 'models': return 'copy';
     }
+  }
+
+  tabLabel(tab: Tab): string {
+    switch (tab) {
+      case 'current': return 'Current';
+      case 'history': return 'History';
+      case 'compare': return 'Compare';
+      case 'models': return 'Multi-Model';
+    }
+  }
+
+  /**
+   * The reasoning effort a run against this model will actually use, shown before execution so
+   * the Multi-Model grid isn't blank until each row completes. Mirrors the server-side default in
+   * AiRequestExecutor.DefaultReasoningEffort — the request's own explicit choice if set, else the
+   * model's highest supported level, else null for a non-reasoning/unrecognized model.
+   */
+  predictedReasoningEffort(providerId: string, modelId: string): string | null {
+    const explicit = this.draft()?.reasoningEffort;
+    if (explicit) return explicit;
+
+    const model = this.models().find(m => m.providerId === providerId && m.modelId === modelId);
+    if (!model?.supportsReasoning) return null;
+
+    const levels = model.supportedReasoningLevels;
+    return levels.includes('high') ? 'high' : (levels[levels.length - 1] ?? null);
   }
 }
 

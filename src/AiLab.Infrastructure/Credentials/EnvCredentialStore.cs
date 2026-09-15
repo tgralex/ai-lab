@@ -20,6 +20,7 @@ public sealed class EnvCredentialStore : ICredentialStore
         ["openai"] = ["OPENAI_API_KEY"],
         ["anthropic"] = ["ANTHROPIC_API_KEY"],
         ["grok"] = ["XAI_API_KEY", "GROK_API_KEY"],
+        ["gemini"] = ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
     };
 
     private readonly string _envFilePath;

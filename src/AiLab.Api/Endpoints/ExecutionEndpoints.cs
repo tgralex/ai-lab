@@ -13,6 +13,8 @@ public static class ExecutionEndpoints
     /// <summary>Optional per-call model override for multi-model comparison runs — never persisted onto the saved request.</summary>
     public record ExecuteOverrideBody(string? ProviderId, string? ModelId);
 
+    public record ArchiveRunBody(bool IsArchived);
+
     public static void MapExecutionEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/requests/{id:guid}/execute", async (
@@ -113,6 +115,25 @@ public static class ExecutionEndpoints
             {
                 await sseWriter.WriteAsync("run-completed", run, ct);
             }
+        });
+
+        app.MapGet("/api/runs/{id:guid}", async (Guid id, AiLabDbContext db, CancellationToken ct) =>
+        {
+            var run = await db.ExecutionRuns.FindAsync([id], ct);
+            return run is null ? Results.NotFound() : Results.Ok(run);
+        });
+
+        app.MapPost("/api/runs/{id:guid}/archive", async (Guid id, ArchiveRunBody body, AiLabDbContext db, CancellationToken ct) =>
+        {
+            var run = await db.ExecutionRuns.FindAsync([id], ct);
+            if (run is null)
+            {
+                return Results.NotFound();
+            }
+
+            run.IsArchived = body.IsArchived;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(run);
         });
     }
 
