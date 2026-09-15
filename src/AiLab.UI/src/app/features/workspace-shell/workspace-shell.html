@@ -331,261 +331,325 @@
         @for (tab of tabs; track tab) {
           <button
             (click)="activeTab.set(tab)"
-            class="flex flex-1 items-center justify-center gap-1 px-3 py-2 capitalize hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            class="flex flex-1 items-center justify-center gap-1 px-3 py-2 hover:bg-neutral-100 dark:hover:bg-neutral-800"
             [class.border-b-2]="activeTab() === tab"
             [class.border-neutral-900]="activeTab() === tab"
             [class.dark:border-neutral-100]="activeTab() === tab"
             [class.text-neutral-400]="activeTab() !== tab"
           >
-            <app-icon [name]="tabIcon(tab)" class="h-3.5 w-3.5" /> {{ tab }}
+            <app-icon [name]="tabIcon(tab)" class="h-3.5 w-3.5" /> {{ tabLabel(tab) }}
           </button>
         }
       </nav>
 
-      <div class="flex-1 overflow-y-auto p-3 text-sm">
+      <div class="flex flex-1 flex-col overflow-hidden text-sm">
         @switch (activeTab()) {
-          @case ('response') {
-            @if (executing()) {
-              <div class="mb-3 flex items-center gap-2 text-xs text-neutral-500">
-                <div class="relative flex h-6 w-6 items-center justify-center">
-                  <svg class="absolute h-6 w-6 animate-spin text-blue-600" viewBox="0 0 24 24" fill="none">
-                    <circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle>
-                    <path class="opacity-90" d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
-                  </svg>
-                  <span class="relative text-[7px] font-semibold tabular-nums">{{ (elapsedMs() / 1000).toFixed(1) }}</span>
+          @case ('current') {
+            <div class="flex-1 overflow-y-auto p-3">
+              <app-run-detail
+                [run]="currentRun()"
+                [streamingOutput]="streamingOutput()"
+                [executing]="executing()"
+                [elapsedMs]="elapsedMs()"
+                [showStop]="executing()"
+                (stop)="stopExecution()"
+              />
+
+              <div class="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
+                <label class="mb-1 block text-xs font-medium text-neutral-500">Benchmark (N runs)</label>
+                <div class="flex gap-2">
+                  <input type="number" [ngModel]="benchmarkCount()" (ngModelChange)="benchmarkCount.set($event)" class="w-20 rounded-md border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900" />
+                  <button (click)="runBenchmark()" [disabled]="benchmarking()" class="flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-1 text-xs text-white dark:bg-neutral-100 dark:text-neutral-900">
+                    <app-icon [name]="benchmarking() ? 'spinner' : 'refresh'" class="h-3.5 w-3.5" />
+                    {{ benchmarking() ? 'Running…' : 'Run' }}
+                  </button>
                 </div>
-                <span>Running…</span>
-                <button
-                  (click)="stopExecution()"
-                  class="ml-auto flex items-center gap-1 rounded bg-red-100 px-2 py-0.5 font-medium text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 dark:hover:bg-red-900/60"
-                ><app-icon name="x" class="h-3.5 w-3.5" /> Stop</button>
-              </div>
-            }
-            @if (currentRun(); as run) {
-              <div class="mb-2 flex items-center gap-2 text-xs">
-                <span
-                  class="rounded-full px-2 py-0.5 font-medium"
-                  [class.bg-green-100]="run.status === 3"
-                  [class.text-green-800]="run.status === 3"
-                  [class.bg-red-100]="run.status === 4"
-                  [class.text-red-800]="run.status === 4"
-                  [class.bg-neutral-100]="run.status !== 3 && run.status !== 4"
-                >
-                  {{ statusLabel(run.status) }}{{ run.totalDuration ? ' in ' + formatTimeSpan(run.totalDuration) : '' }}
-                </span>
-                @if (run.failure?.message) {
-                  <span class="truncate text-red-600">{{ run.failure?.message }}</span>
+                @if (benchmarkResult(); as b) {
+                  <table class="mt-2 w-full text-xs">
+                    <thead><tr class="text-neutral-400"><th class="text-left font-normal">Metric</th><th class="text-right font-normal">Mean</th><th class="text-right font-normal">P90</th><th class="text-right font-normal">P95</th></tr></thead>
+                    <tbody>
+                      <tr><td>Duration</td><td class="text-right font-mono">{{ b.stats.duration.mean | number: '1.0-0' }}ms</td><td class="text-right font-mono">{{ b.stats.duration.p90 | number: '1.0-0' }}ms</td><td class="text-right font-mono">{{ b.stats.duration.p95 | number: '1.0-0' }}ms</td></tr>
+                      <tr><td>TTFT</td><td class="text-right font-mono">{{ b.stats.ttft.mean | number: '1.0-0' }}ms</td><td class="text-right font-mono">{{ b.stats.ttft.p90 | number: '1.0-0' }}ms</td><td class="text-right font-mono">{{ b.stats.ttft.p95 | number: '1.0-0' }}ms</td></tr>
+                      <tr><td>Cost</td><td class="text-right font-mono">{{ formatCost(b.stats.cost.mean) }}</td><td class="text-right font-mono">{{ formatCost(b.stats.cost.p90) }}</td><td class="text-right font-mono">{{ formatCost(b.stats.cost.p95) }}</td></tr>
+                    </tbody>
+                  </table>
+                  <p class="mt-1 text-neutral-400">{{ b.stats.successCount }}/{{ b.stats.runCount }} succeeded</p>
                 }
               </div>
-              @if (isTruncated(run)) {
-                <div class="mb-2 rounded-md bg-amber-100 px-2 py-1 text-xs text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-                  ⚠ Output truncated — the model hit the max output token limit before finishing (increase "Max Output Tokens" to get a complete response).
-                </div>
-              }
-            }
-            <div class="mb-2 flex items-center gap-1 text-xs">
-              <button
-                (click)="responseViewMode.set('rendered')"
-                class="flex items-center gap-1 rounded px-2 py-0.5 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                [class.bg-neutral-200]="responseViewMode() === 'rendered'"
-                [class.dark:bg-neutral-800]="responseViewMode() === 'rendered'"
-              ><app-icon name="eye" class="h-3.5 w-3.5" /> Rendered</button>
-              <button
-                (click)="responseViewMode.set('plain')"
-                class="flex items-center gap-1 rounded px-2 py-0.5 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                [class.bg-neutral-200]="responseViewMode() === 'plain'"
-                [class.dark:bg-neutral-800]="responseViewMode() === 'plain'"
-              ><app-icon name="doc" class="h-3.5 w-3.5" /> Plain</button>
-              <button
-                (click)="responseViewMode.set('raw')"
-                class="flex items-center gap-1 rounded px-2 py-0.5 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                [class.bg-neutral-200]="responseViewMode() === 'raw'"
-                [class.dark:bg-neutral-800]="responseViewMode() === 'raw'"
-              ><app-icon name="code" class="h-3.5 w-3.5" /> Raw JSON</button>
-              <button
-                (click)="copyResponse()"
-                class="ml-auto flex items-center gap-1 rounded px-2 py-0.5 hover:bg-neutral-200 dark:hover:bg-neutral-800"
-              ><app-icon [name]="copied() ? 'check' : 'copy'" class="h-3.5 w-3.5" /> {{ copied() ? 'Copied' : 'Copy' }}</button>
-            </div>
-
-            @switch (responseViewMode()) {
-              @case ('raw') {
-                <pre class="whitespace-pre-wrap break-words rounded-md bg-neutral-100 p-3 font-mono text-xs dark:bg-neutral-900">{{ rawResponseJson() }}</pre>
-              }
-              @case ('plain') {
-                <pre class="whitespace-pre-wrap break-words rounded-md bg-neutral-100 p-3 font-mono text-xs dark:bg-neutral-900">{{ displayOutput() }}</pre>
-              }
-              @default {
-                @if (isJsonOutput()) {
-                  <pre class="whitespace-pre-wrap break-words rounded-md bg-neutral-100 p-3 font-mono text-xs dark:bg-neutral-900">{{ prettyJsonOutput() }}</pre>
-                } @else {
-                  <div class="rendered-markdown rounded-md bg-neutral-100 p-3 text-sm dark:bg-neutral-900" [innerHTML]="renderedMarkdownHtml()"></div>
-                }
-              }
-            }
-          }
-          @case ('stats') {
-            @if (currentRun() ?? selectedHistoryRun(); as run) {
-              <table class="w-full text-xs">
-                <tbody>
-                  <tr><td class="py-1 text-neutral-500">Total duration</td><td class="text-right font-mono">{{ formatTimeSpan(run.totalDuration) }}</td></tr>
-                  <tr><td class="py-1 text-neutral-500">TTFT</td><td class="text-right font-mono">{{ formatTimeSpan(run.timeToFirstOutputToken) }}</td></tr>
-                  <tr><td class="py-1 text-neutral-500">First response event</td><td class="text-right font-mono">{{ formatTimeSpan(run.timeToFirstResponseEvent) }}</td></tr>
-                  <tr><td class="py-1 text-neutral-500">Generation duration</td><td class="text-right font-mono">{{ formatTimeSpan(run.generationDuration) }}</td></tr>
-                  <tr><td class="py-1 text-neutral-500">Tokens/sec</td><td class="text-right font-mono">{{ outputTokensPerSecondDisplay(run) }}</td></tr>
-                  <tr><td class="py-1 text-neutral-500">Input tokens</td><td class="text-right font-mono">{{ run.usage.inputTokens }}</td></tr>
-                  <tr>
-                    <td class="py-1 text-neutral-500" title="Provider auto-caching only hits on a repeat call with the identical prompt prefix (usually needs 1024+ tokens and a recent prior call, ~5-10 min TTL). New/changed prompts show 0 on the first call.">
-                      Cached tokens ⓘ
-                    </td>
-                    <td class="text-right font-mono">{{ run.usage.cachedInputTokens }} ({{ run.usage.cacheHitPercentage | number: '1.0-1' }}%)</td>
-                  </tr>
-                  <tr><td class="py-1 text-neutral-500">Output tokens</td><td class="text-right font-mono">{{ run.usage.outputTokens }}</td></tr>
-                  <tr><td class="py-1 text-neutral-500">Reasoning tokens</td><td class="text-right font-mono">{{ run.usage.reasoningTokens }}</td></tr>
-                  <tr><td class="py-1 text-neutral-500">Estimated cost</td><td class="text-right font-mono">{{ formatCost(run.estimatedTotalCost) }}</td></tr>
-                  <tr><td class="py-1 text-neutral-500">Provider / model</td><td class="text-right font-mono">{{ run.providerId }} / {{ run.actualModel ?? run.requestedModel }}</td></tr>
-                </tbody>
-              </table>
-            } @else {
-              <p class="text-neutral-400">Execute the request to see statistics.</p>
-            }
-
-            <div class="mt-4 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-              <label class="mb-1 block text-xs font-medium text-neutral-500">Benchmark (N runs)</label>
-              <div class="flex gap-2">
-                <input type="number" [ngModel]="benchmarkCount()" (ngModelChange)="benchmarkCount.set($event)" class="w-20 rounded-md border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900" />
-                <button (click)="runBenchmark()" [disabled]="benchmarking()" class="flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-1 text-xs text-white dark:bg-neutral-100 dark:text-neutral-900">
-                  <app-icon [name]="benchmarking() ? 'spinner' : 'refresh'" class="h-3.5 w-3.5" />
-                  {{ benchmarking() ? 'Running…' : 'Run' }}
-                </button>
-              </div>
-              @if (benchmarkResult(); as b) {
-                <table class="mt-2 w-full text-xs">
-                  <thead><tr class="text-neutral-400"><th class="text-left font-normal">Metric</th><th class="text-right font-normal">Mean</th><th class="text-right font-normal">P90</th><th class="text-right font-normal">P95</th></tr></thead>
-                  <tbody>
-                    <tr><td>Duration</td><td class="text-right font-mono">{{ b.stats.duration.mean | number: '1.0-0' }}ms</td><td class="text-right font-mono">{{ b.stats.duration.p90 | number: '1.0-0' }}ms</td><td class="text-right font-mono">{{ b.stats.duration.p95 | number: '1.0-0' }}ms</td></tr>
-                    <tr><td>TTFT</td><td class="text-right font-mono">{{ b.stats.ttft.mean | number: '1.0-0' }}ms</td><td class="text-right font-mono">{{ b.stats.ttft.p90 | number: '1.0-0' }}ms</td><td class="text-right font-mono">{{ b.stats.ttft.p95 | number: '1.0-0' }}ms</td></tr>
-                    <tr><td>Cost</td><td class="text-right font-mono">{{ formatCost(b.stats.cost.mean) }}</td><td class="text-right font-mono">{{ formatCost(b.stats.cost.p90) }}</td><td class="text-right font-mono">{{ formatCost(b.stats.cost.p95) }}</td></tr>
-                  </tbody>
-                </table>
-                <p class="mt-1 text-neutral-400">{{ b.stats.successCount }}/{{ b.stats.runCount }} succeeded</p>
-              }
             </div>
           }
           @case ('history') {
-            <ul class="divide-y divide-neutral-200 dark:divide-neutral-800">
-              @for (run of runs(); track run.id) {
-                <li (click)="viewHistoryRun(run)" class="cursor-pointer py-2 hover:bg-neutral-100 dark:hover:bg-neutral-900">
-                  <div class="flex items-center justify-between text-xs">
-                    <span>{{ run.startedAt | date: 'short' }}</span>
-                    <span [class.text-green-600]="run.status === 3" [class.text-red-600]="run.status === 4">{{ statusLabel(run.status) }}</span>
+            <div class="flex flex-1 flex-col overflow-hidden">
+              <div class="max-h-[40%] shrink-0 overflow-y-auto border-b border-neutral-200 p-2 dark:border-neutral-800">
+                @if (visibleHistoryRuns().length > 0) {
+                  <label class="flex items-center gap-2 px-1 pb-1 text-xs text-neutral-500">
+                    <input
+                      type="checkbox"
+                      [checked]="allVisibleHistoryRunsSelected()"
+                      (change)="toggleSelectAllHistoryRuns()"
+                    />
+                    Select all
+                  </label>
+                }
+                <ul class="divide-y divide-neutral-200 dark:divide-neutral-800">
+                  @for (run of visibleHistoryRuns(); track run.id) {
+                    <li
+                      (click)="viewHistoryRun(run)"
+                      class="group flex cursor-pointer items-start gap-2 rounded-md px-1 py-2 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                      [class.bg-neutral-100]="!historyCompareMode() && selectedHistoryRun()?.id === run.id"
+                      [class.dark:bg-neutral-900]="!historyCompareMode() && selectedHistoryRun()?.id === run.id"
+                    >
+                      <input
+                        type="checkbox"
+                        class="mt-1 shrink-0"
+                        [checked]="historyCompareSelection().has(run.id)"
+                        (click)="$event.stopPropagation(); toggleHistoryCompareSelection(run.id)"
+                        title="Select to compare with other runs of this task"
+                      />
+                      <div class="min-w-0 flex-1">
+                        <div class="flex items-center justify-between text-xs">
+                          <span>{{ run.startedAt | date: 'short' }}</span>
+                          <span class="flex items-center gap-2">
+                            @if (run.isArchived) {
+                              <span class="text-neutral-400">Archived</span>
+                            }
+                            <span [class.text-green-600]="run.status === 3" [class.text-red-600]="run.status === 4">{{ statusLabel(run.status) }}</span>
+                            <button
+                              type="button"
+                              (click)="$event.stopPropagation(); setRunArchived(run, !run.isArchived)"
+                              [title]="run.isArchived ? 'Unarchive' : 'Archive'"
+                              class="text-neutral-400 opacity-0 hover:text-neutral-900 group-hover:opacity-100 dark:hover:text-neutral-100"
+                            >
+                              <app-icon [name]="run.isArchived ? 'unarchive' : 'archive'" class="h-3.5 w-3.5" />
+                            </button>
+                          </span>
+                        </div>
+                        <div class="flex justify-between text-xs text-neutral-400">
+                          <span>{{ formatTimeSpan(run.totalDuration) }}</span>
+                          <span>{{ run.usage.totalTokens }} tok</span>
+                          <span>{{ formatCost(run.estimatedTotalCost) }}</span>
+                        </div>
+                        <div class="flex items-center gap-1 text-xs text-neutral-400">
+                          <app-provider-icon [providerId]="run.providerId" class="h-3 w-3" />
+                          {{ run.providerId }} / {{ run.actualModel ?? run.requestedModel }}
+                        </div>
+                      </div>
+                    </li>
+                  }
+                  @empty {
+                    <p class="py-4 text-neutral-400">{{ runs().length > 0 ? 'No runs — all are archived.' : 'No runs yet.' }}</p>
+                  }
+                </ul>
+                @if (hiddenArchivedCount() > 0) {
+                  <button
+                    type="button"
+                    (click)="toggleShowArchivedRuns()"
+                    class="mt-1 flex w-full items-center justify-center gap-1 rounded px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                  >
+                    <app-icon name="archive" class="h-3.5 w-3.5" />
+                    {{ showArchivedRuns() ? 'Hide' : 'Show' }} {{ hiddenArchivedCount() }} archived run{{ hiddenArchivedCount() === 1 ? '' : 's' }}
+                  </button>
+                }
+                @if (historyCompareSelection().size > 0) {
+                  <div class="mt-1 flex gap-1">
+                    <button
+                      type="button"
+                      (click)="startHistoryComparison()"
+                      [disabled]="historyCompareSelection().size < 2"
+                      class="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-neutral-900 px-2 py-1 text-xs text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
+                    >
+                      <app-icon name="scale" class="h-3.5 w-3.5" /> Compare {{ historyCompareSelection().size }}
+                    </button>
+                    <button
+                      type="button"
+                      (click)="archiveOrUnarchiveSelectedHistoryRuns()"
+                      class="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+                    >
+                      <app-icon [name]="selectedHistoryRunsAllArchived() ? 'unarchive' : 'archive'" class="h-3.5 w-3.5" />
+                      {{ selectedHistoryRunsAllArchived() ? 'Unarchive' : 'Archive' }} {{ historyCompareSelection().size }}
+                    </button>
                   </div>
-                  <div class="flex justify-between text-xs text-neutral-400">
-                    <span>{{ formatTimeSpan(run.totalDuration) }}</span>
-                    <span>{{ run.usage.totalTokens }} tok</span>
-                    <span>{{ formatCost(run.estimatedTotalCost) }}</span>
+                }
+              </div>
+              <div class="flex-1 overflow-y-auto p-3">
+                @if (historyCompareMode()) {
+                  <div class="mb-2 flex items-center justify-between text-xs text-neutral-500">
+                    <span>Comparing {{ historyComparisonRuns().length }} runs of this task — click a row for full detail</span>
+                    <button type="button" (click)="exitHistoryComparison()" class="flex items-center gap-1 hover:text-neutral-900 dark:hover:text-neutral-100">
+                      <app-icon name="x" class="h-3.5 w-3.5" /> Close
+                    </button>
                   </div>
-                  <div class="flex items-center gap-1 text-xs text-neutral-400">
-                    <app-provider-icon [providerId]="run.providerId" class="h-3 w-3" />
-                    {{ run.providerId }} / {{ run.actualModel ?? run.requestedModel }}
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-xs">
+                      <thead class="text-neutral-400">
+                        <tr>
+                          <th class="text-left font-normal">Model</th>
+                          <th class="text-left font-normal">Effort</th>
+                          <th class="text-left font-normal">Started</th>
+                          <th class="text-right font-normal">Total</th>
+                          <th class="text-right font-normal">TTFT</th>
+                          <th class="text-right font-normal">Tokens</th>
+                          <th class="text-right font-normal">Cost</th>
+                          <th class="text-right font-normal">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (run of historyComparisonRuns(); track run.id) {
+                          <tr (click)="viewHistoryRun(run)" class="cursor-pointer border-t border-neutral-100 hover:bg-neutral-100 dark:border-neutral-800 dark:hover:bg-neutral-900">
+                            <td class="py-1">
+                              <span class="flex items-center gap-1">
+                                <app-provider-icon [providerId]="run.providerId" class="h-3 w-3" />
+                                {{ run.providerId }} / {{ run.actualModel ?? run.requestedModel }}
+                              </span>
+                            </td>
+                            <td class="capitalize text-neutral-400">{{ run.snapshot.reasoningEffort ?? '—' }}</td>
+                            <td>{{ run.startedAt | date: 'short' }}</td>
+                            <td class="text-right font-mono">{{ formatTimeSpan(run.totalDuration) }}</td>
+                            <td class="text-right font-mono">{{ formatTimeSpan(run.timeToFirstOutputToken) }}</td>
+                            <td class="text-right font-mono">{{ run.usage.totalTokens }}</td>
+                            <td class="text-right font-mono">{{ formatCost(run.estimatedTotalCost) }}</td>
+                            <td class="text-right" [class.text-green-600]="run.status === 3" [class.text-red-600]="run.status === 4">{{ statusLabel(run.status) }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
                   </div>
-                </li>
-              }
-              @empty {
-                <p class="py-4 text-neutral-400">No runs yet.</p>
-              }
-            </ul>
+                } @else {
+                  <app-run-detail [run]="selectedHistoryRun()" />
+                }
+              </div>
+            </div>
           }
           @case ('compare') {
-            @if (comparisonRows().length > 0) {
-              <div class="overflow-x-auto">
-                <table class="w-full text-xs">
-                  <thead class="text-neutral-400">
-                    <tr>
-                      <th class="text-left font-normal">Request</th>
-                      <th class="text-left font-normal">Model</th>
-                      <th class="text-right font-normal">Total</th>
-                      <th class="text-right font-normal">TTFT</th>
-                      <th class="text-right font-normal">Tokens</th>
-                      <th class="text-right font-normal">Cost</th>
-                      <th class="text-right font-normal">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (row of comparisonRows(); track row.requestId) {
-                      <tr class="border-t border-neutral-100 dark:border-neutral-800">
-                        <td class="py-1">{{ row.requestName }}</td>
-                        <td>{{ row.model }}</td>
-                        <td class="text-right font-mono">{{ row.totalMs ? (row.totalMs | number: '1.0-0') + 'ms' : '—' }}</td>
-                        <td class="text-right font-mono">{{ row.ttftMs ? (row.ttftMs | number: '1.0-0') + 'ms' : '—' }}</td>
-                        <td class="text-right font-mono">{{ row.inputTokens + row.outputTokens }}</td>
-                        <td class="text-right font-mono">{{ formatCost(row.cost) }}</td>
-                        <td class="text-right">{{ row.status }}</td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
+            <div class="flex flex-1 flex-col overflow-hidden">
+              <div class="max-h-[40%] shrink-0 overflow-y-auto border-b border-neutral-200 p-2 dark:border-neutral-800">
+                @if (comparisonRows().length > 0) {
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-xs">
+                      <thead class="text-neutral-400">
+                        <tr>
+                          <th class="text-left font-normal">Request</th>
+                          <th class="text-left font-normal">Model</th>
+                          <th class="text-left font-normal">Effort</th>
+                          <th class="text-right font-normal">Total</th>
+                          <th class="text-right font-normal">TTFT</th>
+                          <th class="text-right font-normal">Tokens</th>
+                          <th class="text-right font-normal">Cost</th>
+                          <th class="text-right font-normal">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (row of comparisonRows(); track row.requestId) {
+                          <tr
+                            (click)="selectComparisonRow(row)"
+                            class="cursor-pointer border-t border-neutral-100 hover:bg-neutral-100 dark:border-neutral-800 dark:hover:bg-neutral-900"
+                            [class.bg-neutral-100]="selectedComparisonRequestId() === row.requestId"
+                            [class.dark:bg-neutral-900]="selectedComparisonRequestId() === row.requestId"
+                          >
+                            <td class="py-1">{{ row.requestName }}</td>
+                            <td>{{ row.model }}</td>
+                            <td class="capitalize text-neutral-400">{{ row.reasoning ?? '—' }}</td>
+                            <td class="text-right font-mono">{{ row.totalMs ? (row.totalMs | number: '1.0-0') + 'ms' : '—' }}</td>
+                            <td class="text-right font-mono">{{ row.ttftMs ? (row.ttftMs | number: '1.0-0') + 'ms' : '—' }}</td>
+                            <td class="text-right font-mono">{{ row.inputTokens + row.outputTokens }}</td>
+                            <td class="text-right font-mono">{{ formatCost(row.cost) }}</td>
+                            <td class="text-right">{{ row.status }}</td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                } @else {
+                  <p class="text-neutral-400">Check requests in the sidebar, then "Compare selected".</p>
+                }
               </div>
-            } @else {
-              <p class="text-neutral-400">Check requests in the sidebar, then "Compare selected".</p>
-            }
+              <div class="flex-1 overflow-y-auto p-3">
+                @if (loadingComparisonRun()) {
+                  <p class="mb-2 text-xs text-neutral-400">Loading…</p>
+                }
+                <app-run-detail [run]="selectedComparisonRun()" />
+              </div>
+            </div>
           }
           @case ('models') {
-            @if (multiModelRuns().length > 0) {
-              @if (multiModelRunning()) {
-                <div class="mb-2 flex justify-end">
-                  <button (click)="stopAllMultiModelRuns()" class="flex items-center gap-1 rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 dark:hover:bg-red-900/60">
-                    <app-icon name="x" class="h-3.5 w-3.5" /> Stop All
-                  </button>
-                </div>
-              }
-              <div class="overflow-x-auto">
-                <table class="w-full text-xs">
-                  <thead class="text-neutral-400">
-                    <tr>
-                      <th class="text-left font-normal">Model</th>
-                      <th class="text-right font-normal">Total</th>
-                      <th class="text-right font-normal">TTFT</th>
-                      <th class="text-right font-normal">Tokens</th>
-                      <th class="text-right font-normal">Cost</th>
-                      <th class="text-right font-normal">Status</th>
-                      <th class="text-right font-normal"></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    @for (row of multiModelRuns(); track row.providerId + row.modelId; let i = $index) {
-                      <tr class="border-t border-neutral-100 dark:border-neutral-800">
-                        <td class="py-1">
-                          <span class="flex items-center gap-1">
-                            <app-provider-icon [providerId]="row.providerId" class="h-3 w-3" />
-                            {{ row.providerId }} / {{ row.modelId }}
-                          </span>
-                        </td>
-                        <td class="text-right font-mono">{{ row.run?.totalDuration ? formatTimeSpan(row.run!.totalDuration) : '—' }}</td>
-                        <td class="text-right font-mono">{{ row.run?.timeToFirstOutputToken ? formatTimeSpan(row.run!.timeToFirstOutputToken) : '—' }}</td>
-                        <td class="text-right font-mono">{{ row.run?.usage?.totalTokens ?? '—' }}</td>
-                        <td class="text-right font-mono">{{ row.run ? formatCost(row.run.estimatedTotalCost) : '—' }}</td>
-                        <td class="text-right">
-                          @switch (row.status) {
-                            @case ('running') { <span class="text-blue-600">Running…</span> }
-                            @case ('done') { <span [class.text-green-600]="row.run?.status === 3" [class.text-red-600]="row.run?.status === 4">{{ row.run ? statusLabel(row.run.status) : 'Done' }}</span> }
-                            @case ('canceled') { <span class="text-neutral-400">Canceled</span> }
-                            @case ('error') { <span class="text-red-600">Error</span> }
-                          }
-                        </td>
-                        <td class="text-right">
-                          @if (row.status === 'running') {
-                            <button (click)="stopMultiModelRun(i)" class="text-red-600 hover:underline">Stop</button>
-                          }
-                        </td>
-                      </tr>
-                    }
-                  </tbody>
-                </table>
+            <div class="flex flex-1 flex-col overflow-hidden">
+              <div class="max-h-[40%] shrink-0 overflow-y-auto border-b border-neutral-200 p-2 dark:border-neutral-800">
+                @if (multiModelRuns().length > 0) {
+                  @if (multiModelRunning()) {
+                    <div class="mb-2 flex justify-end">
+                      <button (click)="stopAllMultiModelRuns()" class="flex items-center gap-1 rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 dark:hover:bg-red-900/60">
+                        <app-icon name="x" class="h-3.5 w-3.5" /> Stop All
+                      </button>
+                    </div>
+                  }
+                  <div class="overflow-x-auto">
+                    <table class="w-full text-xs">
+                      <thead class="text-neutral-400">
+                        <tr>
+                          <th class="text-left font-normal">Model</th>
+                          <th class="text-left font-normal">Effort</th>
+                          <th class="text-right font-normal">Total</th>
+                          <th class="text-right font-normal">TTFT</th>
+                          <th class="text-right font-normal">Tokens</th>
+                          <th class="text-right font-normal">Cost</th>
+                          <th class="text-right font-normal">Status</th>
+                          <th class="text-right font-normal"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        @for (row of multiModelRuns(); track row.providerId + row.modelId; let i = $index) {
+                          <tr
+                            (click)="selectMultiModelRow(i)"
+                            class="cursor-pointer border-t border-neutral-100 hover:bg-neutral-100 dark:border-neutral-800 dark:hover:bg-neutral-900"
+                            [class.bg-neutral-100]="selectedMultiModelIndex() === i"
+                            [class.dark:bg-neutral-900]="selectedMultiModelIndex() === i"
+                          >
+                            <td class="py-1">
+                              <span class="flex items-center gap-1">
+                                <app-provider-icon [providerId]="row.providerId" class="h-3 w-3" />
+                                {{ row.providerId }} / {{ row.modelId }}
+                              </span>
+                            </td>
+                            <td class="capitalize text-neutral-400">{{ row.run?.snapshot?.reasoningEffort ?? predictedReasoningEffort(row.providerId, row.modelId) ?? '—' }}</td>
+                            <td class="text-right font-mono">{{ row.run?.totalDuration ? formatTimeSpan(row.run!.totalDuration) : '—' }}</td>
+                            <td class="text-right font-mono">{{ row.run?.timeToFirstOutputToken ? formatTimeSpan(row.run!.timeToFirstOutputToken) : '—' }}</td>
+                            <td class="text-right font-mono">{{ row.run?.usage?.totalTokens ?? '—' }}</td>
+                            <td class="text-right font-mono">{{ row.run ? formatCost(row.run.estimatedTotalCost) : '—' }}</td>
+                            <td class="text-right">
+                              @switch (row.status) {
+                                @case ('running') { <span class="text-blue-600">Running…</span> }
+                                @case ('done') { <span [class.text-green-600]="row.run?.status === 3" [class.text-red-600]="row.run?.status === 4">{{ row.run ? statusLabel(row.run.status) : 'Done' }}</span> }
+                                @case ('canceled') { <span class="text-neutral-400">Canceled</span> }
+                                @case ('error') { <span class="text-red-600">Error</span> }
+                              }
+                            </td>
+                            <td class="text-right">
+                              @if (row.status === 'running') {
+                                <button (click)="$event.stopPropagation(); stopMultiModelRun(i)" class="text-red-600 hover:underline">Stop</button>
+                              }
+                            </td>
+                          </tr>
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+                } @else {
+                  <p class="text-neutral-400">Use "Compare Models" above to run this request against several models at once.</p>
+                }
               </div>
-            } @else {
-              <p class="text-neutral-400">Use "Compare Models" below to run this request against several models at once.</p>
-            }
+              <div class="flex-1 overflow-y-auto p-3">
+                @if (multiModelRuns()[selectedMultiModelIndex() ?? -1]; as selectedRow) {
+                  <app-run-detail
+                    [run]="selectedRow.run"
+                    [streamingOutput]="selectedRow.streamingOutput"
+                    [executing]="selectedRow.status === 'running'"
+                    [showElapsed]="false"
+                    [showStop]="selectedRow.status === 'running'"
+                    (stop)="stopMultiModelRun(selectedMultiModelIndex()!)"
+                  />
+                }
+              </div>
+            </div>
           }
         }
       </div>

@@ -37,6 +37,14 @@ public sealed class AiRequestExecutor(
         var (userText, userHashes) = await AppendAttachmentsAsync(userResolution.ResolvedText, request.UserContext.AttachmentIds, cancellationToken);
         var attachmentHashes = cachedHashes.Concat(userHashes).Distinct().ToList();
 
+        // The saved request's own Reasoning Effort stays whatever the user set (including
+        // unset/"None") — but an unset effort on a reasoning-capable model means "let the
+        // provider pick," which tends to under-think ambiguous prompts. Default every actual
+        // call to the model's highest supported effort instead, and record what was really used
+        // in the snapshot (surfaced per-run in the UI) rather than leaving it looking unset.
+        var effectiveReasoningEffort = request.Reasoning?.Effort
+            ?? DefaultReasoningEffort(request.ProviderId, request.StructuredOutputSchema, request.MaxOutputTokens, modelForCost);
+
         var snapshot = new RequestSnapshot
         {
             ProviderId = request.ProviderId,
@@ -46,7 +54,7 @@ public sealed class AiRequestExecutor(
             ResolvedUserContext = userText,
             ResolvedBindings = resolvedBindings,
             AttachmentHashes = attachmentHashes,
-            ReasoningEffort = request.Reasoning?.Effort,
+            ReasoningEffort = effectiveReasoningEffort,
             Streaming = request.StreamingEnabled,
             MaxOutputTokens = request.MaxOutputTokens,
             StructuredOutputSchema = request.StructuredOutputSchema,
@@ -81,7 +89,8 @@ public sealed class AiRequestExecutor(
             Attachments = [],
             Streaming = request.StreamingEnabled,
             MaxOutputTokens = request.MaxOutputTokens,
-            ReasoningEffort = request.Reasoning?.Effort,
+            ModelMaxOutputTokens = modelForCost?.MaxOutputTokens,
+            ReasoningEffort = effectiveReasoningEffort,
             StructuredOutputSchema = request.StructuredOutputSchema,
             PromptCacheKey = request.PromptCacheKey,
             ProviderSettings = request.ProviderSettings,
@@ -101,6 +110,47 @@ public sealed class AiRequestExecutor(
         }
 
         return run;
+    }
+
+    /// <summary>"High" when the model supports it (every reasoning-capable model in the catalog
+    /// does), otherwise the model's own highest supported level, or null for a non-reasoning
+    /// model / an unrecognized one where capability can't be confirmed.
+    ///
+    /// Two deliberate exceptions where defaulting reasoning on would do more harm than good:
+    ///
+    /// - An explicit `MaxOutputTokens` is set: every provider we support counts thinking/reasoning
+    ///   tokens against the SAME output budget as the visible answer (confirmed the hard way for
+    ///   Gemini — a request with maxOutputTokens=30 hit MAX_TOKENS with zero visible output because
+    ///   auto-defaulted "high" reasoning consumed the whole tiny budget on invisible thinking). A
+    ///   small explicit cap is a deliberate "keep this fast/cheap" signal from the user; forcing
+    ///   extra reasoning into it can silently crowd out the actual answer. Only auto-default when
+    ///   the request is using the model's full natural ceiling instead of a hand-picked one.
+    /// - Anthropic with structured output: unlike OpenAI/Grok (whose structured output is an
+    ///   independent request parameter), Anthropic has no native JSON-schema output — the only way
+    ///   to get it is a forced tool call, and Anthropic's API rejects a forced tool_choice outright
+    ///   when extended thinking is enabled. Defaulting reasoning on here would only ever downgrade a
+    ///   reliable forced-tool JSON response into a non-deterministic one (see
+    ///   AnthropicRequestBuilder's auto-tool_choice fallback), so skip the default in that one
+    ///   combination — plain-text Anthropic requests still get it, since nothing conflicts there.</summary>
+    private static string? DefaultReasoningEffort(string providerId, string? structuredOutputSchema, int? requestMaxOutputTokens, ProviderModel? model)
+    {
+        if (model is not { SupportsReasoning: true })
+        {
+            return null;
+        }
+
+        if (requestMaxOutputTokens is not null)
+        {
+            return null;
+        }
+
+        if (providerId == "anthropic" && !string.IsNullOrEmpty(structuredOutputSchema))
+        {
+            return null;
+        }
+
+        var levels = model.SupportedReasoningLevels;
+        return levels.Contains("high") ? "high" : levels.LastOrDefault();
     }
 
     private void ApplyResult(ExecutionRun run, ProviderExecutionResult result, ProviderModel? modelForCost)

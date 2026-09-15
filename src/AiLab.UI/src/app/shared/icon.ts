@@ -20,6 +20,8 @@ const ICONS: Record<string, string> = {
   eye: 'M2.5 12S6 5 12 5s9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7Z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z',
   code: 'm9 8-4 4 4 4m6-8 4 4-4 4',
   doc: 'M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z M14 3v5h5 M9 13h6 M9 17h6',
+  archive: 'M3 4h18v4H3z M4 8v11a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8 M10 12h4',
+  unarchive: 'M3 4h18v4H3z M4 8v11a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8 M10 14l2-2 2 2 M12 12v5',
   spinner: '',
 };
 

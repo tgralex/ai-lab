@@ -9,6 +9,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic',
   grok: 'Grok',
+  gemini: 'Gemini',
 };
 
 export interface ModelRef {

@@ -5,6 +5,7 @@ using AiLab.Core.Statistics;
 using AiLab.Infrastructure.Anthropic;
 using AiLab.Infrastructure.Credentials;
 using AiLab.Infrastructure.Files;
+using AiLab.Infrastructure.Gemini;
 using AiLab.Infrastructure.Grok;
 using AiLab.Infrastructure.ModelCatalog;
 using AiLab.Infrastructure.OpenAi;
@@ -49,11 +50,17 @@ public static class ServiceCollectionExtensions
             client.BaseAddress = new Uri("https://api.x.ai/v1/");
             client.Timeout = Timeout.InfiniteTimeSpan;
         });
+        services.AddHttpClient<GeminiProvider>(client =>
+        {
+            client.BaseAddress = new Uri("https://generativelanguage.googleapis.com/v1beta/");
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        });
         // Scoped (not Singleton) so each request scope re-resolves via IHttpClientFactory, avoiding
         // a captive-dependency handler that never rotates.
         services.AddScoped<IAiProvider>(sp => sp.GetRequiredService<OpenAiProvider>());
         services.AddScoped<IAiProvider>(sp => sp.GetRequiredService<AnthropicProvider>());
         services.AddScoped<IAiProvider>(sp => sp.GetRequiredService<GrokProvider>());
+        services.AddScoped<IAiProvider>(sp => sp.GetRequiredService<GeminiProvider>());
 
         services.AddSingleton<ICostCalculator, CostCalculator>();
         services.AddScoped<AiRequestExecutor>();

@@ -66,6 +66,8 @@ public sealed class ExecutionRun
 
     public required RequestSnapshot Snapshot { get; init; }
 
+    public bool IsArchived { get; set; }
+
     public double? OutputTokensPerSecond =>
         GenerationDuration is { } gen && gen.TotalSeconds > 0 && Usage.OutputTokens > 0
             ? Usage.OutputTokens / gen.TotalSeconds

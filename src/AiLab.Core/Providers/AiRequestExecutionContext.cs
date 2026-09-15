@@ -21,6 +21,14 @@ public sealed class AiRequestExecutionContext
 
     public int? MaxOutputTokens { get; init; }
 
+    /// <summary>
+    /// The selected model's own max-output-tokens ceiling from the catalog (not the user's
+    /// request-level override above). Anthropic requires <c>max_tokens</c> on every call, unlike
+    /// OpenAI/Grok which can omit their cap entirely — so when the user hasn't set one, providers
+    /// that must send a number should fall back to this before an arbitrary hardcoded default.
+    /// </summary>
+    public int? ModelMaxOutputTokens { get; init; }
+
     public string? ReasoningEffort { get; init; }
 
     public string? StructuredOutputSchema { get; init; }

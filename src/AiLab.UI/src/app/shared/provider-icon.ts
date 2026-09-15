@@ -13,6 +13,7 @@ const PROVIDER_ICON_DOMAINS: Record<string, string> = {
   anthropic: 'claude.ai',
   openai: 'chatgpt.com',
   grok: 'grok.com',
+  gemini: 'gemini.google.com',
 };
 
 function faviconUrl(domain: string): string {

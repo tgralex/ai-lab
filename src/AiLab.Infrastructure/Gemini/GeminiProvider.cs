@@ -1,23 +1,25 @@
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using AiLab.Core.Execution;
 using AiLab.Core.Models;
 using AiLab.Core.Providers;
 using AiLab.Infrastructure.Credentials;
 using AiLab.Infrastructure.Sse;
 
-namespace AiLab.Infrastructure.OpenAi;
+namespace AiLab.Infrastructure.Gemini;
 
 /// <summary>
-/// OpenAI Responses API provider — raw HttpClient + hand-rolled SSE parsing (ported from the
-/// WinForms OpenAiResponsesClient), so TTFT / first-protocol-event timing stays precise and
-/// provider-comparable rather than however an SDK happens to buffer its stream.
+/// Google Gemini API provider — raw HttpClient + hand-rolled SSE parsing, mirroring
+/// OpenAiProvider/AnthropicProvider/GrokProvider so TTFT / first-protocol-event timing stays
+/// precise and provider-comparable. Gemini's REST shape is meaningfully different from all three:
+/// auth is a header (not Bearer), and the model id + action ("generateContent" vs
+/// "streamGenerateContent") are both part of the URL path rather than the request body.
 /// </summary>
-public sealed class OpenAiProvider(HttpClient httpClient, ICredentialStore credentialStore) : IAiProvider
+public sealed class GeminiProvider(HttpClient httpClient, ICredentialStore credentialStore) : IAiProvider
 {
-    public string Id => "openai";
+    public string Id => "gemini";
 
-    public string DisplayName => "OpenAI";
+    public string DisplayName => "Gemini";
 
     public async Task<ProviderExecutionResult> ExecuteAsync(
         AiRequestExecutionContext context,
@@ -29,27 +31,29 @@ public sealed class OpenAiProvider(HttpClient httpClient, ICredentialStore crede
         var apiKey = await credentialStore.GetApiKeyAsync(Id, cancellationToken);
         if (string.IsNullOrEmpty(apiKey))
         {
-            var failure = new Core.Execution.FailureInfo { Message = "OpenAI API key is not configured.", StreamingStarted = false };
+            var failure = new FailureInfo { Message = "Gemini API key is not configured.", StreamingStarted = false };
             progress?.Report(AiStreamEvent.Create(AiStreamEventKind.Error, errorMessage: failure.Message));
             return new ProviderExecutionResult { Success = false, Failure = failure };
         }
 
-        var requestBody = OpenAiRequestBuilder.Build(context);
+        var requestBody = GeminiRequestBuilder.Build(context);
         var requestJson = requestBody.ToJsonString();
         var normalizedRequestJson = SecretRedactor.Redact(requestJson);
+        var path = context.Streaming
+            ? $"models/{context.ModelId}:streamGenerateContent?alt=sse"
+            : $"models/{context.ModelId}:generateContent";
 
         var retryExecutor = new RetryPolicyExecutor();
-        var streamingStarted = false;
 
         try
         {
             var response = await retryExecutor.ExecuteAsync(async ct =>
             {
-                var request = new HttpRequestMessage(HttpMethod.Post, "responses")
+                var request = new HttpRequestMessage(HttpMethod.Post, path)
                 {
                     Content = new StringContent(requestJson, Encoding.UTF8, "application/json"),
                 };
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+                request.Headers.Add("x-goog-api-key", apiKey);
 
                 return await httpClient.SendAsync(
                     request,
@@ -62,9 +66,9 @@ public sealed class OpenAiProvider(HttpClient httpClient, ICredentialStore crede
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                    var failure = new Core.Execution.FailureInfo
+                    var failure = new FailureInfo
                     {
-                        Message = $"OpenAI returned HTTP {(int)response.StatusCode}.",
+                        Message = $"Gemini returned HTTP {(int)response.StatusCode}.",
                         HttpStatus = (int)response.StatusCode,
                         ProviderError = SecretRedactor.Redact(errorBody),
                         StreamingStarted = false,
@@ -91,11 +95,10 @@ public sealed class OpenAiProvider(HttpClient httpClient, ICredentialStore crede
         }
         catch (Exception ex)
         {
-            var failure = new Core.Execution.FailureInfo
+            var failure = new FailureInfo
             {
                 ExceptionType = ex.GetType().Name,
                 Message = SecretRedactor.Redact(ex.Message),
-                StreamingStarted = streamingStarted,
                 RetryCount = retryExecutor.LastRetryCount,
             };
             progress?.Report(AiStreamEvent.Create(AiStreamEventKind.Error, errorMessage: failure.Message));
@@ -111,14 +114,13 @@ public sealed class OpenAiProvider(HttpClient httpClient, ICredentialStore crede
     {
         var body = await response.Content.ReadAsStringAsync(ct);
         using var document = JsonDocument.Parse(body);
-        var parsed = OpenAiResponseParser.Parse(document.RootElement);
+        var parsed = GeminiResponseParser.Parse(document.RootElement);
 
         // No OutputTextDelta here: a non-streaming call has no observable "first token" moment —
-        // the whole response arrives at once, so TTFT/generation-duration/tokens-per-sec correctly
-        // stay unset (not a fabricated sub-millisecond figure) rather than reported as if measured.
+        // see the matching comment in OpenAiProvider for why TTFT stays unset rather than fabricated.
         progress?.Report(AiStreamEvent.Create(AiStreamEventKind.Completed));
 
-        return BuildResult(parsed, response, SecretRedactor.Redact(body), normalizedRequestJson, streamingStarted: false, retryCount: 0);
+        return BuildResult(parsed, (int)response.StatusCode, SecretRedactor.Redact(body), normalizedRequestJson, streamingStarted: false, retryCount: 0);
     }
 
     private static async Task<ProviderExecutionResult> HandleStreamingResponseAsync(
@@ -130,8 +132,7 @@ public sealed class OpenAiProvider(HttpClient httpClient, ICredentialStore crede
     {
         await using var stream = await response.Content.ReadAsStreamAsync(ct);
         var firstEventSeen = false;
-        string? finalPayload = null;
-        ParsedOpenAiResponse? finalParsed = null;
+        var accumulator = new GeminiStreamAccumulator();
 
         await foreach (var sseEvent in SseParser.ParseAsync(stream, ct))
         {
@@ -141,84 +142,44 @@ public sealed class OpenAiProvider(HttpClient httpClient, ICredentialStore crede
                 progress?.Report(AiStreamEvent.Create(AiStreamEventKind.FirstProtocolEvent));
             }
 
-            if (string.IsNullOrWhiteSpace(sseEvent.Data) || sseEvent.Data == "[DONE]")
+            if (string.IsNullOrWhiteSpace(sseEvent.Data))
             {
                 continue;
             }
 
             using var eventDoc = JsonDocument.Parse(sseEvent.Data);
-            var type = eventDoc.RootElement.TryGetProperty("type", out var typeElement) ? typeElement.GetString() : null;
+            accumulator.ApplyChunk(eventDoc.RootElement);
 
-            switch (type)
+            if (!string.IsNullOrEmpty(accumulator.LastDelta))
             {
-                case "response.output_text.delta":
-                    var delta = eventDoc.RootElement.TryGetProperty("delta", out var deltaElement) ? deltaElement.GetString() : null;
-                    if (!string.IsNullOrEmpty(delta))
-                    {
-                        progress?.Report(AiStreamEvent.Create(AiStreamEventKind.OutputTextDelta, textDelta: delta));
-                    }
-
-                    break;
-
-                case "response.completed":
-                case "response.incomplete":
-                case "response.failed":
-                    if (eventDoc.RootElement.TryGetProperty("response", out var responseElement))
-                    {
-                        finalPayload = responseElement.GetRawText();
-                        finalParsed = OpenAiResponseParser.Parse(responseElement);
-                    }
-
-                    break;
+                progress?.Report(AiStreamEvent.Create(AiStreamEventKind.OutputTextDelta, textDelta: accumulator.LastDelta));
             }
-        }
-
-        if (finalParsed is null)
-        {
-            var failure = new Core.Execution.FailureInfo
-            {
-                Message = "Stream ended without a terminal response.completed/failed event.",
-                StreamingStarted = true,
-                RetryCount = retryExecutor.LastRetryCount,
-            };
-            progress?.Report(AiStreamEvent.Create(AiStreamEventKind.Error, errorMessage: failure.Message));
-            return new ProviderExecutionResult { Success = false, Failure = failure, NormalizedRequestJson = normalizedRequestJson };
         }
 
         progress?.Report(AiStreamEvent.Create(AiStreamEventKind.Completed));
 
-        return BuildResult(finalParsed, response, SecretRedactor.Redact(finalPayload ?? string.Empty), normalizedRequestJson, streamingStarted: true, retryCount: retryExecutor.LastRetryCount);
+        var parsed = accumulator.ToParsedResponse();
+        return BuildResult(parsed, (int)response.StatusCode, accumulator.ToRawJson(), normalizedRequestJson, streamingStarted: true, retryCount: retryExecutor.LastRetryCount);
     }
 
     private static ProviderExecutionResult BuildResult(
-        ParsedOpenAiResponse parsed,
-        HttpResponseMessage response,
+        ParsedGeminiResponse parsed,
+        int httpStatus,
         string rawResponseJson,
         string normalizedRequestJson,
         bool streamingStarted,
         int retryCount)
     {
-        if (parsed.ErrorMessage is not null || parsed.Status is "failed" or "incomplete")
+        if (parsed.ErrorMessage is not null)
         {
-            var failure = new Core.Execution.FailureInfo
-            {
-                Message = parsed.ErrorMessage ?? $"Response ended with status '{parsed.Status}'.",
-                HttpStatus = (int)response.StatusCode,
-                StreamingStarted = streamingStarted,
-                RetryCount = retryCount,
-            };
-
             return new ProviderExecutionResult
             {
                 Success = false,
                 RawResponseJson = rawResponseJson,
                 NormalizedRequestJson = normalizedRequestJson,
-                ResponseId = parsed.ResponseId,
-                ActualModel = parsed.ActualModel,
-                FinishReason = parsed.Status,
-                HttpStatus = (int)response.StatusCode,
+                HttpStatus = httpStatus,
                 Usage = parsed.Usage,
-                Failure = failure,
+                Failure = new FailureInfo { Message = parsed.ErrorMessage, HttpStatus = httpStatus, StreamingStarted = streamingStarted, RetryCount = retryCount },
             };
         }
 
@@ -230,8 +191,8 @@ public sealed class OpenAiProvider(HttpClient httpClient, ICredentialStore crede
             NormalizedRequestJson = normalizedRequestJson,
             ResponseId = parsed.ResponseId,
             ActualModel = parsed.ActualModel,
-            FinishReason = parsed.Status,
-            HttpStatus = (int)response.StatusCode,
+            FinishReason = parsed.FinishReason,
+            HttpStatus = httpStatus,
             Usage = parsed.Usage,
         };
     }
@@ -244,8 +205,8 @@ public sealed class OpenAiProvider(HttpClient httpClient, ICredentialStore crede
             return [];
         }
 
-        var request = new HttpRequestMessage(HttpMethod.Get, "models");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        var request = new HttpRequestMessage(HttpMethod.Get, "models?pageSize=200");
+        request.Headers.Add("x-goog-api-key", apiKey);
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -256,16 +217,24 @@ public sealed class OpenAiProvider(HttpClient httpClient, ICredentialStore crede
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         using var document = JsonDocument.Parse(body);
 
-        if (!document.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+        if (!document.RootElement.TryGetProperty("models", out var modelsElement) || modelsElement.ValueKind != JsonValueKind.Array)
         {
             return [];
         }
 
         var models = new List<ProviderModel>();
-        foreach (var item in data.EnumerateArray())
+        foreach (var item in modelsElement.EnumerateArray())
         {
-            var id = item.TryGetProperty("id", out var idElement) ? idElement.GetString() : null;
-            if (!string.IsNullOrEmpty(id) && IsChatCapable(id))
+            var name = item.TryGetProperty("name", out var nameElement) ? nameElement.GetString() : null;
+            if (string.IsNullOrEmpty(name))
+            {
+                continue;
+            }
+
+            // Names come back as "models/gemini-3.5-flash" — strip the prefix for a bare id,
+            // matching the other three providers' /models responses.
+            var id = name.StartsWith("models/", StringComparison.Ordinal) ? name["models/".Length..] : name;
+            if (IsChatCapable(id))
             {
                 models.Add(ProviderModel.Unknown(Id, id));
             }
@@ -274,23 +243,33 @@ public sealed class OpenAiProvider(HttpClient httpClient, ICredentialStore crede
         return models;
     }
 
-    // OpenAI's /models list mixes in embeddings, TTS/whisper, image/video generation, realtime/
-    // audio, moderation, and legacy raw-completion models alongside actual chat models — none of
-    // those work through this app's chat/Responses execution path, so they're excluded outright
-    // (as opposed to old-but-still-chat-capable generations like gpt-3.5, which stay selectable
-    // and are just deprioritized — see ProviderModelCatalogService). "-chat-latest" aliases (e.g.
-    // gpt-5-chat-latest) are the ChatGPT-product-facing snapshot and are Chat-Completions-only —
-    // calling them via POST /v1/responses (what this app's OpenAiProvider always uses) 404s with
-    // "model_not_found" even though they're otherwise valid, listed models.
+    // Google's /v1beta/models list mixes embeddings, TTS, audio/video "live" streaming, image and
+    // video generation (Veo), music generation (Lyria), robotics, open-weight Gemma models, and
+    // various internal/experimental tooling in alongside actual text-chat models — mirrors
+    // OpenAiProvider.IsChatCapable's role, none of these work through this app's generateContent
+    // text-chat execution path, so they're excluded outright rather than cluttering the picker
+    // with ~50 entries that would just 404 or misbehave if selected.
     private static readonly string[] NonChatMarkers =
     [
-        "embedding", "whisper", "moderation", "-image", "sora-", "audio", "realtime", "-live",
-        "transcribe", "-tts", "babbage-", "davinci-", "-instruct", "chat-latest",
+        "embedding", "-tts", "audio", "-live", "-image", "veo-", "lyria-", "transcribe",
+        "robotics", "computer-use", "gemma", "antigravity", "deep-research", "aqa",
+        "nano-banana", "gemini-omni",
     ];
+
+    // Unlike the modality markers above, these are legitimate text-chat model ids by every naming
+    // convention — Google's /v1beta/models list still returns them, but confirmed live (real
+    // 404s, not a guess) that pro, flash, AND flash-lite of the 2.5 generation are all retired for
+    // new API keys: "This model models/gemini-2.5-pro is no longer available to new users. Please
+    // update your code to use models/gemini-3.1-pro-preview..." (gemini-2.5-flash points at
+    // gemini-3.6-flash, gemini-2.5-flash-lite at gemini-3.5-flash-lite). No field in the /models
+    // response signals this account-tier restriction ahead of time, and since every 2.5-tier
+    // model checked so far is blocked the same way, exclude the whole generation by prefix rather
+    // than denylisting individual ids as each one surfaces its own 404.
+    private const string RetiredGenerationPrefix = "gemini-2.5-";
 
     private static bool IsChatCapable(string modelId)
     {
         var lower = modelId.ToLowerInvariant();
-        return !NonChatMarkers.Any(lower.Contains);
+        return !NonChatMarkers.Any(lower.Contains) && !lower.StartsWith(RetiredGenerationPrefix, StringComparison.Ordinal);
     }
 }
