@@ -9,13 +9,24 @@ import {
   Workspace, AiRequestDefinition, ExecutionRun, ProviderModel, ExecutionStatus, ExecutionStatusLabel,
   BenchmarkResponse, ComparisonRow, AiStreamEvent, ExecutionPlan, ObservedModelStatistics, Attachment,
 } from '../../core/models';
-import { ModelDropdown } from '../../shared/model-dropdown';
+import { ModelDropdown, ModelRef } from '../../shared/model-dropdown';
 import { PersistSizeDirective } from '../../shared/persist-size.directive';
+import { ClickOutsideDirective } from '../../shared/click-outside.directive';
 import { Icon } from '../../shared/icon';
+import { ProviderIcon } from '../../shared/provider-icon';
 import { formatTimeSpan, formatCost, formatTokensPerSecond, timeSpanToMs } from '../../shared/format';
 
-type Tab = 'response' | 'stats' | 'history' | 'compare';
+type Tab = 'response' | 'stats' | 'history' | 'compare' | 'models';
 type ResponseViewMode = 'rendered' | 'plain' | 'raw';
+
+interface MultiModelRunRow {
+  providerId: string;
+  modelId: string;
+  status: 'running' | 'done' | 'canceled' | 'error';
+  run: ExecutionRun | null;
+  streamingOutput: string;
+  handle: CancelableExecution<ExecutionRun> | null;
+}
 
 const MIN_PANEL_WIDTH = 200;
 const MAX_PANEL_WIDTH = 700;
@@ -23,7 +34,7 @@ const MAX_PANEL_WIDTH = 700;
 @Component({
   selector: 'app-workspace-shell',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, ModelDropdown, PersistSizeDirective, Icon],
+  imports: [CommonModule, FormsModule, RouterLink, ModelDropdown, PersistSizeDirective, ClickOutsideDirective, Icon, ProviderIcon],
   templateUrl: './workspace-shell.html',
 })
 export class WorkspaceShell implements OnInit, OnDestroy {
@@ -53,13 +64,18 @@ export class WorkspaceShell implements OnInit, OnDestroy {
   uploadingUser = signal(false);
 
   activeTab = signal<Tab>('response');
-  readonly tabs: Tab[] = ['response', 'stats', 'history', 'compare'];
+  readonly tabs: Tab[] = ['response', 'stats', 'history', 'compare', 'models'];
   executing = signal(false);
   streamingOutput = signal('');
   currentRun = signal<ExecutionRun | null>(null);
   private activeExecution: CancelableExecution<ExecutionRun> | null = null;
   copied = signal(false);
   private copiedTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  compareModelsOpen = signal(false);
+  compareModelsSelection = signal<ModelRef[]>([]);
+  multiModelRuns = signal<MultiModelRunRow[]>([]);
+  multiModelRunning = computed(() => this.multiModelRuns().some(r => r.status === 'running'));
 
   runs = signal<ExecutionRun[]>([]);
   selectedHistoryRun = signal<ExecutionRun | null>(null);
@@ -353,6 +369,57 @@ export class WorkspaceShell implements OnInit, OnDestroy {
     this.activeExecution?.cancel();
   }
 
+  /** Runs the current request against each selected model in parallel, so results can be compared side by side. */
+  async runOnSelectedModels() {
+    const selected = this.selectedRequest();
+    const targets = this.compareModelsSelection();
+    if (!selected || this.dirty() || targets.length === 0) return;
+
+    this.activeTab.set('models');
+    this.multiModelRuns.set(targets.map(t => ({
+      providerId: t.providerId,
+      modelId: t.modelId,
+      status: 'running',
+      run: null,
+      streamingOutput: '',
+      handle: null,
+    })));
+
+    const patchRow = (i: number, patch: Partial<MultiModelRunRow>) => {
+      this.multiModelRuns.set(this.multiModelRuns().map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+    };
+
+    const tasks = targets.map(async (t, i) => {
+      try {
+        const handle = selected.streamingEnabled
+          ? this.api.executeRequestStream(selected.id, (evt: AiStreamEvent) => {
+              if (evt.kind === 2 && evt.textDelta) {
+                const row = this.multiModelRuns()[i];
+                patchRow(i, { streamingOutput: (row?.streamingOutput ?? '') + evt.textDelta });
+              }
+            }, t)
+          : this.api.executeRequest(selected.id, t);
+        patchRow(i, { handle });
+        const run = await handle.promise;
+        patchRow(i, { run, status: run ? 'done' : 'canceled' });
+      } catch {
+        patchRow(i, { status: 'error' });
+      }
+    });
+
+    await Promise.all(tasks);
+    this.runs.set(await this.api.listRuns(selected.id));
+    this.observedStats.set(await this.api.observedModelStats());
+  }
+
+  stopMultiModelRun(i: number) {
+    this.multiModelRuns()[i]?.handle?.cancel();
+  }
+
+  stopAllMultiModelRuns() {
+    for (const row of this.multiModelRuns()) row.handle?.cancel();
+  }
+
   async runBenchmark() {
     const selected = this.selectedRequest();
     if (!selected) return;
@@ -429,6 +496,12 @@ export class WorkspaceShell implements OnInit, OnDestroy {
     this.copiedTimeout = setTimeout(() => this.copied.set(false), 1500);
   }
 
+  private static readonly TRUNCATED_FINISH_REASONS = new Set(['max_tokens', 'incomplete', 'length']);
+
+  isTruncated(run: ExecutionRun): boolean {
+    return !!run.finishReason && WorkspaceShell.TRUNCATED_FINISH_REASONS.has(run.finishReason);
+  }
+
   statusLabel(status: ExecutionStatus): string {
     return ExecutionStatusLabel[status];
   }
@@ -444,6 +517,7 @@ export class WorkspaceShell implements OnInit, OnDestroy {
       case 'stats': return 'chartBar';
       case 'history': return 'clock';
       case 'compare': return 'scale';
+      case 'models': return 'copy';
     }
   }
 }

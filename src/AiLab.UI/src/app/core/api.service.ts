@@ -124,14 +124,19 @@ export class ApiService {
     return firstValueFrom(this.http.get<ExecutionRun[]>(`${this.base}/requests/${requestId}/runs`));
   }
 
-  /** Cancel aborts the underlying HTTP request; the server still persists a Canceled run. */
-  executeRequest(id: string): CancelableExecution<ExecutionRun> {
+  /**
+   * Cancel aborts the underlying HTTP request; the server still persists a Canceled run.
+   * `override` runs the SAME saved request against a different provider/model for that call only
+   * (never persisted onto the saved request) — used for multi-model comparison runs.
+   */
+  executeRequest(id: string, override?: { providerId: string; modelId: string }): CancelableExecution<ExecutionRun> {
     let settled = false;
     let resolveFn!: (v: ExecutionRun | null) => void;
     let subscription: Subscription;
     const promise = new Promise<ExecutionRun | null>((resolve, reject) => {
       resolveFn = resolve;
-      subscription = this.http.post<ExecutionRun>(`${this.base}/requests/${id}/execute`, {}).subscribe({
+      const body = override ? { providerId: override.providerId, modelId: override.modelId } : {};
+      subscription = this.http.post<ExecutionRun>(`${this.base}/requests/${id}/execute`, body).subscribe({
         next: (run) => { settled = true; resolve(run); },
         error: (err) => { if (!settled) { settled = true; reject(err); } },
       });
@@ -154,13 +159,14 @@ export class ApiService {
    * persisted ExecutionRun. Cancel closes the EventSource, which drops the server connection —
    * the server still persists the resulting Canceled run.
    */
-  executeRequestStream(id: string, onEvent: (evt: AiStreamEvent) => void): CancelableExecution<ExecutionRun> {
+  executeRequestStream(id: string, onEvent: (evt: AiStreamEvent) => void, override?: { providerId: string; modelId: string }): CancelableExecution<ExecutionRun> {
     let settled = false;
     let resolveFn!: (v: ExecutionRun | null) => void;
     let source: EventSource;
     const promise = new Promise<ExecutionRun | null>((resolve, reject) => {
       resolveFn = resolve;
-      source = new EventSource(`${this.base}/requests/${id}/execute-stream`);
+      const q = override ? `?providerId=${encodeURIComponent(override.providerId)}&modelId=${encodeURIComponent(override.modelId)}` : '';
+      source = new EventSource(`${this.base}/requests/${id}/execute-stream${q}`);
       source.addEventListener('stream-event', (e: MessageEvent) => onEvent(JSON.parse(e.data)));
       source.addEventListener('run-completed', (e: MessageEvent) => {
         settled = true;

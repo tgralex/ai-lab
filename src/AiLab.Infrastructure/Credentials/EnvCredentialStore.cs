@@ -10,10 +10,16 @@ namespace AiLab.Infrastructure.Credentials;
 /// </summary>
 public sealed class EnvCredentialStore : ICredentialStore
 {
-    private static readonly IReadOnlyDictionary<string, string> ProviderEnvVarNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    /// <summary>
+    /// Candidate env var names per provider, checked in order — lets a user's own natural naming
+    /// choice (e.g. GROK_API_KEY) work alongside the documented canonical name (XAI_API_KEY)
+    /// without forcing a rename. SetApiKeyAsync always writes the first (canonical) name.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string[]> ProviderEnvVarNames = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
     {
-        ["openai"] = "OPENAI_API_KEY",
-        ["anthropic"] = "ANTHROPIC_API_KEY",
+        ["openai"] = ["OPENAI_API_KEY"],
+        ["anthropic"] = ["ANTHROPIC_API_KEY"],
+        ["grok"] = ["XAI_API_KEY", "GROK_API_KEY"],
     };
 
     private readonly string _envFilePath;
@@ -56,21 +62,27 @@ public sealed class EnvCredentialStore : ICredentialStore
 
     private string? ResolveKey(string providerId)
     {
-        var envVarName = GetEnvVarName(providerId);
-
-        var fromRealEnv = Environment.GetEnvironmentVariable(envVarName);
-        if (!string.IsNullOrEmpty(fromRealEnv))
+        foreach (var envVarName in GetEnvVarNames(providerId))
         {
-            return fromRealEnv;
+            var fromRealEnv = Environment.GetEnvironmentVariable(envVarName);
+            if (!string.IsNullOrEmpty(fromRealEnv))
+            {
+                return fromRealEnv;
+            }
+
+            if (_envFileValues.TryGetValue(envVarName, out var fromFile) && !string.IsNullOrEmpty(fromFile))
+            {
+                return fromFile;
+            }
         }
 
-        return _envFileValues.TryGetValue(envVarName, out var fromFile) && !string.IsNullOrEmpty(fromFile)
-            ? fromFile
-            : null;
+        return null;
     }
 
-    private static string GetEnvVarName(string providerId) =>
-        ProviderEnvVarNames.TryGetValue(providerId, out var name)
-            ? name
+    private static string GetEnvVarName(string providerId) => GetEnvVarNames(providerId)[0];
+
+    private static string[] GetEnvVarNames(string providerId) =>
+        ProviderEnvVarNames.TryGetValue(providerId, out var names)
+            ? names
             : throw new ArgumentException($"Unknown provider id '{providerId}'.", nameof(providerId));
 }

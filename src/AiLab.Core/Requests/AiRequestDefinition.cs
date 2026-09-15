@@ -46,6 +46,40 @@ public sealed class AiRequestDefinition
 
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    /// <summary>
+    /// A deep copy for one-off "run this same request against a different model" execution —
+    /// keeps the SAME Id (so the resulting ExecutionRun still ties back to this saved request's
+    /// History) instead of Clone()'s fresh Id, and is never persisted. Since it's built via `new`
+    /// rather than fetched via db.Requests, EF never tracks it, so passing it into the executor
+    /// carries no risk of the model override leaking back into the saved request on SaveChanges.
+    /// </summary>
+    public AiRequestDefinition CloneForModel(string providerId, string modelId)
+    {
+        return new AiRequestDefinition
+        {
+            Id = Id,
+            WorkspaceId = WorkspaceId,
+            Name = Name,
+            Description = Description,
+            ProviderId = providerId,
+            ModelId = modelId,
+            SystemPrompt = SystemPrompt,
+            CachedContext = new ContentBlock { Text = CachedContext.Text, AttachmentIds = [.. CachedContext.AttachmentIds] },
+            UserContext = new ContentBlock { Text = UserContext.Text, AttachmentIds = [.. UserContext.AttachmentIds] },
+            InputBindings = [.. InputBindings],
+            StructuredOutputSchema = StructuredOutputSchema,
+            StreamingEnabled = StreamingEnabled,
+            MaxOutputTokens = MaxOutputTokens,
+            Reasoning = Reasoning is null ? null : new ReasoningConfig { Effort = Reasoning.Effort },
+            ProviderSettings = new Dictionary<string, string>(ProviderSettings),
+            PromptCacheKey = PromptCacheKey,
+            FailurePolicy = FailurePolicy,
+            RetryPolicy = new RetryPolicy { MaxRetries = RetryPolicy.MaxRetries, BaseBackoffMs = RetryPolicy.BaseBackoffMs },
+            Tags = [.. Tags],
+            Notes = Notes,
+        };
+    }
+
     public AiRequestDefinition Clone(string? newName = null)
     {
         return new AiRequestDefinition
