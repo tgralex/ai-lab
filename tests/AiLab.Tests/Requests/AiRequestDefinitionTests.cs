@@ -60,4 +60,39 @@ public class AiRequestDefinitionTests
         Assert.Equal(original.CachedContext.Text, clone.CachedContext.Text);
         Assert.Equal(original.CachedContext.AttachmentIds, clone.CachedContext.AttachmentIds);
     }
+
+    [Fact]
+    public void CloneForModel_PreservesIdSoExecutionRunsTieBackToTheSavedRequest()
+    {
+        var original = BuildRequest();
+
+        var clone = original.CloneForModel("anthropic", "claude-test");
+
+        Assert.Equal(original.Id, clone.Id);
+    }
+
+    [Fact]
+    public void CloneForModel_OverridesProviderAndModelOnly()
+    {
+        var original = BuildRequest();
+
+        var clone = original.CloneForModel("anthropic", "claude-test");
+
+        Assert.Equal("anthropic", clone.ProviderId);
+        Assert.Equal("claude-test", clone.ModelId);
+        Assert.Equal(original.Name, clone.Name);
+        Assert.Equal(original.CachedContext.Text, clone.CachedContext.Text);
+        Assert.Equal(original.CachedContext.AttachmentIds, clone.CachedContext.AttachmentIds);
+    }
+
+    [Fact]
+    public void CloneForModel_DoesNotMutateOriginal()
+    {
+        var original = BuildRequest();
+
+        original.CloneForModel("anthropic", "claude-test");
+
+        Assert.Equal("openai", original.ProviderId);
+        Assert.Equal("gpt-test", original.ModelId);
+    }
 }

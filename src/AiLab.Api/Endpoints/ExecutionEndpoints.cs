@@ -10,10 +10,14 @@ namespace AiLab.Api.Endpoints;
 
 public static class ExecutionEndpoints
 {
+    /// <summary>Optional per-call model override for multi-model comparison runs — never persisted onto the saved request.</summary>
+    public record ExecuteOverrideBody(string? ProviderId, string? ModelId);
+
     public static void MapExecutionEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost("/api/requests/{id:guid}/execute", async (
             Guid id,
+            ExecuteOverrideBody? body,
             AiLabDbContext db,
             AiRequestExecutor executor,
             IProviderModelCatalogService catalog,
@@ -25,18 +29,28 @@ public static class ExecutionEndpoints
                 return Results.NotFound();
             }
 
-            var bindingContext = await BuildBindingContextAsync(request.WorkspaceId, db, ct);
-            var model = await FindModelForCostAsync(request.ProviderId, request.ModelId, catalog, ct);
-            var run = await executor.ExecuteAsync(request, bindingContext, model, progress: null, ct);
+            var providerId = body?.ProviderId ?? request.ProviderId;
+            var modelId = body?.ModelId ?? request.ModelId;
+            var executionRequest = body?.ProviderId is null && body?.ModelId is null
+                ? request
+                : request.CloneForModel(providerId, modelId);
 
+            var bindingContext = await BuildBindingContextAsync(request.WorkspaceId, db, ct);
+            var model = await FindModelForCostAsync(providerId, modelId, catalog, ct);
+            var run = await executor.ExecuteAsync(executionRequest, bindingContext, model, progress: null, ct);
+
+            // A Stopped/disconnected request still leaves a real Canceled run behind — persist with
+            // an uncancellable token so that record isn't lost to the same disconnect that made it.
             db.ExecutionRuns.Add(run);
-            await db.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(CancellationToken.None);
 
             return Results.Ok(run);
         });
 
         app.MapGet("/api/requests/{id:guid}/execute-stream", async (
             Guid id,
+            string? providerId,
+            string? modelId,
             HttpResponse httpResponse,
             AiLabDbContext db,
             AiRequestExecutor executor,
@@ -50,8 +64,14 @@ public static class ExecutionEndpoints
                 return;
             }
 
+            var effectiveProviderId = providerId ?? request.ProviderId;
+            var effectiveModelId = modelId ?? request.ModelId;
+            var executionRequest = providerId is null && modelId is null
+                ? request
+                : request.CloneForModel(effectiveProviderId, effectiveModelId);
+
             var bindingContext = await BuildBindingContextAsync(request.WorkspaceId, db, ct);
-            var model = await FindModelForCostAsync(request.ProviderId, request.ModelId, catalog, ct);
+            var model = await FindModelForCostAsync(effectiveProviderId, effectiveModelId, catalog, ct);
 
             var sseWriter = new SseResponseWriter(httpResponse);
             sseWriter.PrepareResponse();
@@ -59,28 +79,40 @@ public static class ExecutionEndpoints
             var channel = Channel.CreateUnbounded<AiStreamEvent>();
             var progress = new ChannelProgress(channel.Writer);
 
+            // Not tied to `ct`: the executor itself already reacts to `ct` internally (recording a
+            // Canceled run rather than throwing) — the Task.Run wrapper shouldn't preempt that.
             var executeTask = Task.Run(async () =>
             {
                 try
                 {
-                    return await executor.ExecuteAsync(request, bindingContext, model, progress, ct);
+                    return await executor.ExecuteAsync(executionRequest, bindingContext, model, progress, ct);
                 }
                 finally
                 {
                     channel.Writer.Complete();
                 }
-            }, ct);
+            }, CancellationToken.None);
 
-            await foreach (var streamEvent in channel.Reader.ReadAllAsync(ct))
+            try
             {
-                await sseWriter.WriteAsync("stream-event", streamEvent, ct);
+                await foreach (var streamEvent in channel.Reader.ReadAllAsync(ct))
+                {
+                    await sseWriter.WriteAsync("stream-event", streamEvent, ct);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Client disconnected (Stop button) — fall through to still persist the Canceled run below.
             }
 
             var run = await executeTask;
             db.ExecutionRuns.Add(run);
-            await db.SaveChangesAsync(ct);
+            await db.SaveChangesAsync(CancellationToken.None);
 
-            await sseWriter.WriteAsync("run-completed", run, ct);
+            if (!ct.IsCancellationRequested)
+            {
+                await sseWriter.WriteAsync("run-completed", run, ct);
+            }
         });
     }
 

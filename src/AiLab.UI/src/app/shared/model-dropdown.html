@@ -1,12 +1,21 @@
-<div class="relative">
+<div class="relative" (appClickOutside)="close()">
   <button
     type="button"
-    (click)="open.set(!open())"
+    (click)="toggleOpen()"
     class="flex w-full items-center justify-between rounded-md border border-neutral-300 bg-white px-3 py-2 text-left text-sm dark:border-neutral-700 dark:bg-neutral-900"
   >
     <span>
-      @if (selected(); as m) {
-        {{ m.displayName }} <span class="text-neutral-400">({{ m.providerId }})</span>
+      @if (multiple) {
+        @if (selectedModels.length > 0) {
+          {{ selectedModels.length }} model{{ selectedModels.length === 1 ? '' : 's' }} selected
+        } @else {
+          <span class="text-neutral-400">Select models…</span>
+        }
+      } @else if (selected(); as m) {
+        <span class="inline-flex items-center gap-1.5">
+          <app-provider-icon [providerId]="m.providerId" class="h-3.5 w-3.5" />
+          {{ m.displayName }} <span class="text-neutral-400">({{ m.providerId }})</span>
+        </span>
       } @else {
         <span class="text-neutral-400">Select a model…</span>
       }
@@ -15,9 +24,45 @@
   </button>
 
   @if (open()) {
-    <div class="absolute z-20 mt-1 max-h-80 w-full min-w-[22rem] overflow-y-auto rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+    <div class="absolute z-20 mt-1 max-h-96 w-full min-w-[22rem] overflow-y-auto rounded-md border border-neutral-200 bg-white shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+      @if (availableProviders().length > 1) {
+        <div class="sticky top-0 flex flex-wrap gap-1 border-b border-neutral-100 bg-white p-2 dark:border-neutral-800 dark:bg-neutral-900">
+          <button
+            type="button"
+            (click)="setProviderFilter(null)"
+            class="rounded-full px-2 py-0.5 text-xs"
+            [class.bg-neutral-900]="providerFilter() === null"
+            [class.text-white]="providerFilter() === null"
+            [class.dark:bg-neutral-100]="providerFilter() === null"
+            [class.dark:text-neutral-900]="providerFilter() === null"
+            [class.bg-neutral-100]="providerFilter() !== null"
+            [class.dark:bg-neutral-800]="providerFilter() !== null"
+            [class.hover:bg-neutral-200]="providerFilter() !== null"
+            [class.dark:hover:bg-neutral-700]="providerFilter() !== null"
+          >All</button>
+          @for (p of availableProviders(); track p) {
+            <button
+              type="button"
+              (click)="setProviderFilter(p)"
+              class="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs"
+              [class.bg-neutral-900]="providerFilter() === p"
+              [class.text-white]="providerFilter() === p"
+              [class.dark:bg-neutral-100]="providerFilter() === p"
+              [class.dark:text-neutral-900]="providerFilter() === p"
+              [class.bg-neutral-100]="providerFilter() !== p"
+              [class.dark:bg-neutral-800]="providerFilter() !== p"
+              [class.hover:bg-neutral-200]="providerFilter() !== p"
+              [class.dark:hover:bg-neutral-700]="providerFilter() !== p"
+            >
+              <app-provider-icon [providerId]="p" class="h-3 w-3" />
+              {{ providerDisplayName(p) }}
+            </button>
+          }
+        </div>
+      }
       @for (group of groupedModels(); track group.providerId) {
-        <div class="border-b border-neutral-100 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:border-neutral-800">
+        <div class="flex items-center gap-1.5 border-b border-neutral-100 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-neutral-400 dark:border-neutral-800">
+          <app-provider-icon [providerId]="group.providerId" class="h-3 w-3" />
           {{ group.providerId }}
         </div>
         @for (m of group.models; track m.modelId) {
@@ -27,9 +72,17 @@
             class="flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800"
           >
             <div class="flex w-full items-center justify-between">
-              <span class="font-medium">{{ m.displayName }}</span>
+              <span class="flex items-center gap-1.5 font-medium">
+                @if (multiple) {
+                  <input type="checkbox" [checked]="isSelected(m)" class="pointer-events-none" />
+                }
+                {{ m.displayName }}
+              </span>
               @if (m.recommended) {
                 <span class="rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-700">recommended</span>
+              }
+              @if (m.isDeprecated) {
+                <span class="rounded-full bg-neutral-200 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 dark:bg-neutral-700 dark:text-neutral-300">older</span>
               }
             </div>
             <div class="text-xs text-neutral-500">
@@ -50,6 +103,20 @@
       }
       @if (groupedModels().length === 0) {
         <div class="px-3 py-3 text-sm text-neutral-400">No models loaded — check provider credentials or refresh the catalog.</div>
+      }
+      @if (hiddenOlderCount() > 0 || showOlder()) {
+        <button
+          type="button"
+          (click)="toggleShowOlder()"
+          class="w-full border-t border-neutral-100 px-3 py-2 text-left text-xs text-neutral-500 hover:bg-neutral-100 dark:border-neutral-800 dark:hover:bg-neutral-800"
+        >
+          {{ showOlder() ? 'Hide older / retired models' : 'Show ' + hiddenOlderCount() + ' older / retired model' + (hiddenOlderCount() === 1 ? '' : 's') }}
+        </button>
+      }
+      @if (multiple) {
+        <div class="sticky bottom-0 border-t border-neutral-100 bg-white p-2 dark:border-neutral-800 dark:bg-neutral-900">
+          <button type="button" (click)="open.set(false)" class="w-full rounded-md bg-neutral-900 px-2 py-1 text-xs text-white dark:bg-neutral-100 dark:text-neutral-900">Done</button>
+        </div>
       }
     </div>
   }
