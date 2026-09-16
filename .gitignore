@@ -24,6 +24,9 @@ src/AiLab.UI/.angular/
 src/AiLab.Api/wwwroot/*
 !src/AiLab.Api/wwwroot/.gitkeep
 
+# Claude Code runtime state (session-specific, not project config — .claude/launch.json stays tracked)
+.claude/*.lock
+
 # Misc
 *.pem
 npm-debug.log*
