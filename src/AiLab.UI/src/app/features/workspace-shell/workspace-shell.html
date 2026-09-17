@@ -45,7 +45,7 @@
       </ul>
       @if (compareSelection().size > 0) {
         <div class="px-3 py-2">
-          <button (click)="loadComparison()" class="flex w-full items-center justify-center gap-1.5 rounded-md bg-neutral-900 px-2 py-1 text-xs text-white dark:bg-neutral-100 dark:text-neutral-900">
+          <button (click)="loadComparison()" class="flex w-full items-center justify-center gap-1.5 rounded-md bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700">
             <app-icon name="scale" class="h-3.5 w-3.5" /> Compare {{ compareSelection().size }} selected
           </button>
         </div>
@@ -278,7 +278,7 @@
             <button
               (click)="saveRequest()"
               [disabled]="!dirty()"
-              class="flex items-center gap-1.5 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
+              class="flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-40"
             >
               <app-icon name="save" class="h-4 w-4" /> Save
             </button>
@@ -328,8 +328,7 @@
             (click)="activeTab.set(tab)"
             class="flex flex-1 items-center justify-center gap-1 px-3 py-2 hover:bg-neutral-100 dark:hover:bg-neutral-800"
             [class.border-b-2]="activeTab() === tab"
-            [class.border-neutral-900]="activeTab() === tab"
-            [class.dark:border-neutral-100]="activeTab() === tab"
+            [class.border-blue-600]="activeTab() === tab"
             [class.text-neutral-400]="activeTab() !== tab"
           >
             <app-icon [name]="tabIcon(tab)" class="h-3.5 w-3.5" /> {{ tabLabel(tab) }}
@@ -354,7 +353,7 @@
                 <label class="mb-1 block text-xs font-medium text-neutral-500">Benchmark (N runs)</label>
                 <div class="flex gap-2">
                   <input type="number" [ngModel]="benchmarkCount()" (ngModelChange)="benchmarkCount.set($event)" class="w-20 rounded-md border border-neutral-300 px-2 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900" />
-                  <button (click)="runBenchmark()" [disabled]="benchmarking()" class="flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-1 text-xs text-white dark:bg-neutral-100 dark:text-neutral-900">
+                  <button (click)="runBenchmark()" [disabled]="benchmarking()" class="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700">
                     <app-icon [name]="benchmarking() ? 'spinner' : 'refresh'" class="h-3.5 w-3.5" />
                     {{ benchmarking() ? 'Running…' : 'Run' }}
                   </button>
@@ -393,7 +392,7 @@
                         type="button"
                         (click)="startHistoryComparison()"
                         [disabled]="historyCompareSelection().size < 2"
-                        class="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-neutral-900 px-2 py-1 text-xs text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
+                        class="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-40"
                       >
                         <app-icon name="scale" class="h-3.5 w-3.5" /> Compare {{ historyCompareSelection().size }}
                       </button>

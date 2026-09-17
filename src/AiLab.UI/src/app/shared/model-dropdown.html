@@ -31,10 +31,8 @@
             type="button"
             (click)="setProviderFilter(null)"
             class="rounded-full px-2 py-0.5 text-xs"
-            [class.bg-neutral-900]="providerFilter() === null"
+            [class.bg-blue-600]="providerFilter() === null"
             [class.text-white]="providerFilter() === null"
-            [class.dark:bg-neutral-100]="providerFilter() === null"
-            [class.dark:text-neutral-900]="providerFilter() === null"
             [class.bg-neutral-100]="providerFilter() !== null"
             [class.dark:bg-neutral-800]="providerFilter() !== null"
             [class.hover:bg-neutral-200]="providerFilter() !== null"
@@ -45,10 +43,8 @@
               type="button"
               (click)="setProviderFilter(p)"
               class="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs"
-              [class.bg-neutral-900]="providerFilter() === p"
+              [class.bg-blue-600]="providerFilter() === p"
               [class.text-white]="providerFilter() === p"
-              [class.dark:bg-neutral-100]="providerFilter() === p"
-              [class.dark:text-neutral-900]="providerFilter() === p"
               [class.bg-neutral-100]="providerFilter() !== p"
               [class.dark:bg-neutral-800]="providerFilter() !== p"
               [class.hover:bg-neutral-200]="providerFilter() !== p"
@@ -115,7 +111,7 @@
       }
       @if (multiple) {
         <div class="sticky bottom-0 border-t border-neutral-100 bg-white p-2 dark:border-neutral-800 dark:bg-neutral-900">
-          <button type="button" (click)="open.set(false)" class="w-full rounded-md bg-neutral-900 px-2 py-1 text-xs text-white dark:bg-neutral-100 dark:text-neutral-900">Done</button>
+          <button type="button" (click)="open.set(false)" class="w-full rounded-md bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700">Done</button>
         </div>
       }
     </div>

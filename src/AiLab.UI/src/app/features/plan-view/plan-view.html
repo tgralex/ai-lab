@@ -67,7 +67,7 @@
             <option [value]="r.id">{{ r.name }}</option>
           }
         </select>
-        <button (click)="addEdge()" title="Add dependency" class="shrink-0 rounded-md bg-neutral-900 px-2 text-white dark:bg-neutral-100 dark:text-neutral-900">
+        <button (click)="addEdge()" title="Add dependency" class="shrink-0 rounded-md bg-blue-600 px-2 text-white hover:bg-blue-700">
           <app-icon name="plus" class="h-3.5 w-3.5" />
         </button>
       </div>
@@ -88,7 +88,7 @@
                   <span class="text-red-600 dark:text-red-400">Discard changes to this dependency?</span>
                   <div class="flex shrink-0 gap-1">
                     <button (click)="confirmDiscardEdgeEdit()" class="rounded border border-neutral-300 px-1.5 py-0.5 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900">Discard</button>
-                    <button (click)="keepEditingEdge()" class="rounded bg-neutral-900 px-1.5 py-0.5 text-white dark:bg-neutral-100 dark:text-neutral-900">Keep editing</button>
+                    <button (click)="keepEditingEdge()" class="rounded bg-blue-600 px-1.5 py-0.5 text-white hover:bg-blue-700">Keep editing</button>
                   </div>
                 </div>
               } @else {
@@ -137,7 +137,7 @@
       }
 
       <div class="flex gap-2">
-        <button (click)="saveEdits()" [disabled]="saving()" class="flex items-center gap-1.5 rounded-md bg-neutral-900 px-3 py-1 text-xs text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900">
+        <button (click)="saveEdits()" [disabled]="saving()" class="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-40">
           <app-icon [name]="saving() ? 'spinner' : 'save'" class="h-3.5 w-3.5" /> {{ saving() ? 'Saving…' : 'Save' }}
         </button>
         @if (isDirty()) {
@@ -229,8 +229,7 @@
             (click)="activeDetailTab.set('task')"
             class="flex flex-1 items-center justify-center gap-1 px-3 py-2 hover:bg-neutral-100 dark:hover:bg-neutral-900"
             [class.border-b-2]="activeDetailTab() === 'task'"
-            [class.border-neutral-900]="activeDetailTab() === 'task'"
-            [class.dark:border-neutral-100]="activeDetailTab() === 'task'"
+            [class.border-blue-600]="activeDetailTab() === 'task'"
             [class.text-neutral-400]="activeDetailTab() !== 'task'"
           >
             Task
@@ -239,8 +238,7 @@
             (click)="activeDetailTab.set('stats')"
             class="flex flex-1 items-center justify-center gap-1 px-3 py-2 hover:bg-neutral-100 dark:hover:bg-neutral-900"
             [class.border-b-2]="activeDetailTab() === 'stats'"
-            [class.border-neutral-900]="activeDetailTab() === 'stats'"
-            [class.dark:border-neutral-100]="activeDetailTab() === 'stats'"
+            [class.border-blue-600]="activeDetailTab() === 'stats'"
             [class.text-neutral-400]="activeDetailTab() !== 'stats'"
           >
             Plan Statistics
@@ -262,8 +260,7 @@
                   <button
                     (click)="activeTaskSubTab.set('info')"
                     class="rounded-full px-3 py-1 text-xs font-medium"
-                    [class.bg-neutral-900]="activeTaskSubTab() === 'info'" [class.text-white]="activeTaskSubTab() === 'info'"
-                    [class.dark:bg-neutral-100]="activeTaskSubTab() === 'info'" [class.dark:text-neutral-900]="activeTaskSubTab() === 'info'"
+                    [class.bg-blue-600]="activeTaskSubTab() === 'info'" [class.text-white]="activeTaskSubTab() === 'info'"
                     [class.bg-neutral-100]="activeTaskSubTab() !== 'info'" [class.text-neutral-500]="activeTaskSubTab() !== 'info'"
                     [class.dark:bg-neutral-900]="activeTaskSubTab() !== 'info'"
                   >
@@ -272,8 +269,7 @@
                   <button
                     (click)="activeTaskSubTab.set('input')"
                     class="rounded-full px-3 py-1 text-xs font-medium"
-                    [class.bg-neutral-900]="activeTaskSubTab() === 'input'" [class.text-white]="activeTaskSubTab() === 'input'"
-                    [class.dark:bg-neutral-100]="activeTaskSubTab() === 'input'" [class.dark:text-neutral-900]="activeTaskSubTab() === 'input'"
+                    [class.bg-blue-600]="activeTaskSubTab() === 'input'" [class.text-white]="activeTaskSubTab() === 'input'"
                     [class.bg-neutral-100]="activeTaskSubTab() !== 'input'" [class.text-neutral-500]="activeTaskSubTab() !== 'input'"
                     [class.dark:bg-neutral-900]="activeTaskSubTab() !== 'input'"
                   >
@@ -282,8 +278,7 @@
                   <button
                     (click)="activeTaskSubTab.set('result')"
                     class="rounded-full px-3 py-1 text-xs font-medium"
-                    [class.bg-neutral-900]="activeTaskSubTab() === 'result'" [class.text-white]="activeTaskSubTab() === 'result'"
-                    [class.dark:bg-neutral-100]="activeTaskSubTab() === 'result'" [class.dark:text-neutral-900]="activeTaskSubTab() === 'result'"
+                    [class.bg-blue-600]="activeTaskSubTab() === 'result'" [class.text-white]="activeTaskSubTab() === 'result'"
                     [class.bg-neutral-100]="activeTaskSubTab() !== 'result'" [class.text-neutral-500]="activeTaskSubTab() !== 'result'"
                     [class.dark:bg-neutral-900]="activeTaskSubTab() !== 'result'"
                   >
