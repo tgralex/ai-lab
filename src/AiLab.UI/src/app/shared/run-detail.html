@@ -68,21 +68,26 @@
     ><app-icon [name]="copied() ? 'check' : 'copy'" class="h-3.5 w-3.5" /> {{ copied() ? 'Copied' : 'Copy' }}</button>
   </div>
 
-  @switch (responseViewMode()) {
-    @case ('raw') {
-      <pre class="whitespace-pre-wrap break-words rounded-md bg-neutral-100 p-3 font-mono text-xs dark:bg-neutral-900">{{ rawResponseJson() }}</pre>
-    }
-    @case ('plain') {
-      <pre class="whitespace-pre-wrap break-words rounded-md bg-neutral-100 p-3 font-mono text-xs dark:bg-neutral-900">{{ displayOutput() }}</pre>
-    }
-    @default {
-      @if (isJsonOutput()) {
-        <pre class="whitespace-pre-wrap break-words rounded-md bg-neutral-100 p-3 font-mono text-xs dark:bg-neutral-900">{{ prettyJsonOutput() }}</pre>
-      } @else {
-        <div class="rendered-markdown rounded-md bg-neutral-100 p-3 text-sm dark:bg-neutral-900" [innerHTML]="renderedMarkdownHtml()"></div>
+  <div
+    appPersistSize="responseOutput"
+    class="h-64 min-h-[80px] max-h-[80vh] resize-y overflow-auto rounded-md bg-neutral-100 p-3 dark:bg-neutral-900"
+  >
+    @switch (responseViewMode()) {
+      @case ('raw') {
+        <pre class="whitespace-pre-wrap break-words font-mono text-xs">{{ rawResponseJson() }}</pre>
+      }
+      @case ('plain') {
+        <pre class="whitespace-pre-wrap break-words font-mono text-xs">{{ displayOutput() }}</pre>
+      }
+      @default {
+        @if (isJsonOutput()) {
+          <pre class="whitespace-pre-wrap break-words font-mono text-xs" [innerHTML]="prettyJsonHtml()"></pre>
+        } @else {
+          <div class="rendered-markdown text-sm" [innerHTML]="renderedMarkdownHtml()"></div>
+        }
       }
     }
-  }
+  </div>
 } @else if (!executingValue()) {
   <p class="text-neutral-400">Execute the request to see the response.</p>
 }

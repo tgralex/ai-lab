@@ -5,6 +5,7 @@ import { marked } from 'marked';
 import { ExecutionRun, ExecutionStatus, ExecutionStatusLabel } from '../core/models';
 import { Icon } from './icon';
 import { formatTimeSpan, formatCost, formatTokensPerSecond } from './format';
+import { PersistSizeDirective } from './persist-size.directive';
 
 type ResponseViewMode = 'rendered' | 'plain' | 'raw';
 
@@ -14,7 +15,7 @@ const TRUNCATED_FINISH_REASONS = new Set(['max_tokens', 'incomplete', 'length', 
 @Component({
   selector: 'app-run-detail',
   standalone: true,
-  imports: [CommonModule, Icon],
+  imports: [CommonModule, Icon, PersistSizeDirective],
   templateUrl: './run-detail.html',
 })
 export class RunDetail implements OnChanges {
@@ -77,12 +78,35 @@ export class RunDetail implements OnChanges {
     }
   });
 
-  prettyJsonOutput = computed(() => {
+  // JSON.stringify with a properly-escaped (still-valid-JSON) string — computed once and reused
+  // by both the plain-text and highlighted-HTML views below, since key-detection only stays
+  // unambiguous on the escaped form (a real newline inside an unescaped value could otherwise be
+  // mistaken for a new key line).
+  private prettyJsonRaw = computed<string | null>(() => {
     try {
       return JSON.stringify(JSON.parse(this.displayOutput()), null, 2);
     } catch {
-      return this.displayOutput();
+      return null;
     }
+  });
+
+  prettyJsonOutput = computed(() => {
+    const raw = this.prettyJsonRaw();
+    return raw === null ? this.displayOutput() : unescapeForDisplay(raw);
+  });
+
+  // Same content as prettyJsonOutput, but with property names bolded/colored so they read apart
+  // from their values — built from the escaped form so key lines ("key": ) are unambiguous, then
+  // HTML-escaped and newline/tab-unescaped for display after the highlighting spans are inserted.
+  prettyJsonHtml = computed(() => {
+    const raw = this.prettyJsonRaw();
+    if (raw === null) return '';
+    const escaped = escapeHtml(raw);
+    const highlighted = escaped.replace(
+      /^(\s*)"((?:[^"\\]|\\.)*)":/gm,
+      '$1<span class="font-semibold text-sky-700 dark:text-sky-400">"$2"</span>:',
+    );
+    return this.sanitizer.sanitize(SecurityContext.HTML, unescapeForDisplay(highlighted)) ?? '';
   });
 
   renderedMarkdownHtml = computed(() => {
@@ -126,4 +150,15 @@ export class RunDetail implements OnChanges {
     if (this.copiedTimeout) clearTimeout(this.copiedTimeout);
     this.copiedTimeout = setTimeout(() => this.copied.set(false), 1500);
   }
+}
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// JSON.stringify escapes newlines/tabs *inside* string values as literal "\n"/"\t" (valid JSON,
+// but unreadable — a multi-paragraph field renders as one run-on line). Unescape them for display;
+// the Raw JSON tab still shows the untouched wire format.
+function unescapeForDisplay(text: string): string {
+  return text.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
 }

@@ -137,26 +137,23 @@
             </div>
           </div>
 
-          <div>
-            <label class="mb-1 block text-xs font-medium text-neutral-500">System Prompt</label>
-            <textarea
-              [ngModel]="d.systemPrompt"
-              (ngModelChange)="draft.set({ ...d, systemPrompt: $event }); markDirty()"
-              appPersistSize="systemPrompt"
-              rows="2"
-              class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-            ></textarea>
-          </div>
+          <app-text-field
+            label="System Prompt"
+            [value]="d.systemPrompt ?? null"
+            (valueChange)="draft.set({ ...d, systemPrompt: $event }); markDirty()"
+            persistKey="systemPrompt"
+            [rows]="2"
+          />
 
           <div>
-            <label class="mb-1 block text-xs font-medium text-neutral-500">Cached Context <span class="text-neutral-400">(shared prefix — eligible for prompt caching)</span></label>
-            <textarea
-              [ngModel]="d.cachedContextText"
-              (ngModelChange)="draft.set({ ...d, cachedContextText: $event }); markDirty()"
-              appPersistSize="cachedContext"
-              rows="3"
-              class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-            ></textarea>
+            <app-text-field
+              label="Cached Context"
+              hint="(shared prefix — eligible for prompt caching)"
+              [value]="d.cachedContextText ?? null"
+              (valueChange)="draft.set({ ...d, cachedContextText: $event }); markDirty()"
+              persistKey="cachedContext"
+              [rows]="3"
+            />
             <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
               @for (id of d.cachedContextAttachmentIds ?? []; track id) {
                 <span class="flex items-center gap-1 rounded-full bg-neutral-200 px-2 py-0.5 text-xs dark:bg-neutral-800">
@@ -183,16 +180,14 @@
           </div>
 
           <div>
-            <label class="mb-1 block text-xs font-medium text-neutral-500">
-              User Context <span class="text-neutral-400">— supports {{ '{{workspace.var}}' }}, {{ '{{RequestName.output}}' }}, {{ '{{RequestName.json.path}}' }}</span>
-            </label>
-            <textarea
-              [ngModel]="d.userContextText"
-              (ngModelChange)="draft.set({ ...d, userContextText: $event }); markDirty()"
-              appPersistSize="userContext"
-              rows="5"
-              class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-            ></textarea>
+            <app-text-field
+              label="User Context"
+              [hint]="userContextHint"
+              [value]="d.userContextText ?? null"
+              (valueChange)="draft.set({ ...d, userContextText: $event }); markDirty()"
+              persistKey="userContext"
+              [rows]="5"
+            />
             <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
               @for (id of d.userContextAttachmentIds ?? []; track id) {
                 <span class="flex items-center gap-1 rounded-full bg-neutral-200 px-2 py-0.5 text-xs dark:bg-neutral-800">
@@ -380,18 +375,40 @@
           }
           @case ('history') {
             <div class="flex flex-1 flex-col overflow-hidden">
-              <div class="max-h-[40%] shrink-0 overflow-y-auto border-b border-neutral-200 p-2 dark:border-neutral-800">
-                @if (visibleHistoryRuns().length > 0) {
-                  <label class="flex items-center gap-2 px-1 pb-1 text-xs text-neutral-500">
-                    <input
-                      type="checkbox"
-                      [checked]="allVisibleHistoryRunsSelected()"
-                      (change)="toggleSelectAllHistoryRuns()"
-                    />
-                    Select all
-                  </label>
-                }
-                <ul class="divide-y divide-neutral-200 dark:divide-neutral-800">
+              <div class="max-h-[40%] shrink-0 overflow-y-auto border-b border-neutral-200 dark:border-neutral-800">
+                <div class="sticky top-0 z-10 bg-neutral-50 p-2 pb-1 dark:bg-neutral-950">
+                  @if (visibleHistoryRuns().length > 0) {
+                    <label class="flex items-center gap-2 px-1 pb-1 text-xs text-neutral-500">
+                      <input
+                        type="checkbox"
+                        [checked]="allVisibleHistoryRunsSelected()"
+                        (change)="toggleSelectAllHistoryRuns()"
+                      />
+                      Select all
+                    </label>
+                  }
+                  @if (historyCompareSelection().size > 0) {
+                    <div class="flex gap-1">
+                      <button
+                        type="button"
+                        (click)="startHistoryComparison()"
+                        [disabled]="historyCompareSelection().size < 2"
+                        class="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-neutral-900 px-2 py-1 text-xs text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
+                      >
+                        <app-icon name="scale" class="h-3.5 w-3.5" /> Compare {{ historyCompareSelection().size }}
+                      </button>
+                      <button
+                        type="button"
+                        (click)="archiveOrUnarchiveSelectedHistoryRuns()"
+                        class="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+                      >
+                        <app-icon [name]="selectedHistoryRunsAllArchived() ? 'unarchive' : 'archive'" class="h-3.5 w-3.5" />
+                        {{ selectedHistoryRunsAllArchived() ? 'Unarchive' : 'Archive' }} {{ historyCompareSelection().size }}
+                      </button>
+                    </div>
+                  }
+                </div>
+                <ul class="divide-y divide-neutral-200 px-2 dark:divide-neutral-800">
                   @for (run of visibleHistoryRuns(); track run.id) {
                     <li
                       (click)="viewHistoryRun(run)"
@@ -444,31 +461,11 @@
                   <button
                     type="button"
                     (click)="toggleShowArchivedRuns()"
-                    class="mt-1 flex w-full items-center justify-center gap-1 rounded px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                    class="mx-2 mb-2 mt-1 flex w-[calc(100%-1rem)] items-center justify-center gap-1 rounded px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-900"
                   >
                     <app-icon name="archive" class="h-3.5 w-3.5" />
                     {{ showArchivedRuns() ? 'Hide' : 'Show' }} {{ hiddenArchivedCount() }} archived run{{ hiddenArchivedCount() === 1 ? '' : 's' }}
                   </button>
-                }
-                @if (historyCompareSelection().size > 0) {
-                  <div class="mt-1 flex gap-1">
-                    <button
-                      type="button"
-                      (click)="startHistoryComparison()"
-                      [disabled]="historyCompareSelection().size < 2"
-                      class="flex flex-1 items-center justify-center gap-1.5 rounded-md bg-neutral-900 px-2 py-1 text-xs text-white disabled:opacity-40 dark:bg-neutral-100 dark:text-neutral-900"
-                    >
-                      <app-icon name="scale" class="h-3.5 w-3.5" /> Compare {{ historyCompareSelection().size }}
-                    </button>
-                    <button
-                      type="button"
-                      (click)="archiveOrUnarchiveSelectedHistoryRuns()"
-                      class="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-neutral-300 px-2 py-1 text-xs hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
-                    >
-                      <app-icon [name]="selectedHistoryRunsAllArchived() ? 'unarchive' : 'archive'" class="h-3.5 w-3.5" />
-                      {{ selectedHistoryRunsAllArchived() ? 'Unarchive' : 'Archive' }} {{ historyCompareSelection().size }}
-                    </button>
-                  </div>
                 }
               </div>
               <div class="flex-1 overflow-y-auto p-3">
