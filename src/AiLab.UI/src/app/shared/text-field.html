@@ -1,0 +1,36 @@
+<label class="mb-1 block text-xs font-medium text-neutral-500">
+  {{ label }}
+  @if (hint) {
+    <span class="text-neutral-400">{{ hint }}</span>
+  }
+</label>
+
+<textarea
+  [ngModel]="value"
+  (ngModelChange)="valueChange.emit($event)"
+  [readOnly]="readOnly"
+  [appPersistSize]="persistKey"
+  [rows]="rows"
+  [placeholder]="placeholder"
+  class="w-full rounded-md border px-3 py-2 text-sm"
+  [class.border-neutral-300]="!readOnly"
+  [class.bg-white]="!readOnly"
+  [class.dark:border-neutral-700]="!readOnly"
+  [class.dark:bg-neutral-900]="!readOnly"
+  [class.border-neutral-200]="readOnly"
+  [class.bg-neutral-50]="readOnly"
+  [class.dark:border-neutral-800]="readOnly"
+  [class.dark:bg-neutral-900/50]="readOnly"
+  [class.font-mono]="monospace"
+  [class.text-xs]="monospace"
+></textarea>
+
+@if (attachmentLabels.length > 0) {
+  <div class="mt-1.5 flex flex-wrap items-center gap-1.5">
+    @for (label of attachmentLabels; track label) {
+      <span class="flex items-center gap-1 rounded-full bg-neutral-200 px-2 py-0.5 text-xs dark:bg-neutral-800">
+        <app-icon name="paperclip" class="h-3 w-3" /> {{ label }}
+      </span>
+    }
+  </div>
+}

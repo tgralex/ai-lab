@@ -13,7 +13,9 @@ import { ClickOutsideDirective } from '../../shared/click-outside.directive';
 import { Icon } from '../../shared/icon';
 import { ProviderIcon } from '../../shared/provider-icon';
 import { RunDetail } from '../../shared/run-detail';
-import { formatTimeSpan, formatCost, timeSpanToMs } from '../../shared/format';
+import { TextField } from '../../shared/text-field';
+import { formatTimeSpan, formatCost, timeSpanToMs, formatBytes } from '../../shared/format';
+import { MIN_PANEL_WIDTH, MAX_PANEL_WIDTH, clamp, loadPanelWidth, savePanelWidth } from '../../shared/panel-width';
 
 type Tab = 'current' | 'history' | 'compare' | 'models';
 
@@ -26,13 +28,10 @@ interface MultiModelRunRow {
   handle: CancelableExecution<ExecutionRun> | null;
 }
 
-const MIN_PANEL_WIDTH = 200;
-const MAX_PANEL_WIDTH = 700;
-
 @Component({
   selector: 'app-workspace-shell',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, ModelDropdown, PersistSizeDirective, ClickOutsideDirective, Icon, ProviderIcon, RunDetail],
+  imports: [CommonModule, FormsModule, RouterLink, ModelDropdown, PersistSizeDirective, ClickOutsideDirective, Icon, ProviderIcon, RunDetail, TextField],
   templateUrl: './workspace-shell.html',
 })
 export class WorkspaceShell implements OnInit, OnDestroy {
@@ -42,6 +41,7 @@ export class WorkspaceShell implements OnInit, OnDestroy {
 
   readonly ExecutionStatusLabel = ExecutionStatusLabel;
   readonly formatTimeSpan = formatTimeSpan;
+  readonly userContextHint = '— supports {{workspace.var}}, {{RequestName.output}}, {{RequestName.json.path}}';
   readonly formatCost = formatCost;
 
   workspaceId = signal<string>('');
@@ -632,29 +632,3 @@ function downloadText(content: string, filename: string, mimeType: string) {
   URL.revokeObjectURL(url);
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, value));
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-}
-
-function loadPanelWidth(key: string, fallback: number): number {
-  try {
-    const saved = localStorage.getItem(`ailab.panel-width.${key}`);
-    return saved ? Number(saved) || fallback : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function savePanelWidth(key: string, width: number) {
-  try {
-    localStorage.setItem(`ailab.panel-width.${key}`, String(width));
-  } catch {
-    // Per-viewer convenience only — ignore storage failures.
-  }
-}
