@@ -1,9 +1,23 @@
 <div class="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100">
   <div class="mx-auto max-w-3xl px-4 py-12">
     <div class="mb-8 flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-semibold">AI Lab</h1>
-        <p class="text-sm text-neutral-500">A request lab for creating, testing, comparing and benchmarking AI API calls.</p>
+      <div class="flex items-center gap-3">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 shrink-0">
+          <defs>
+            <linearGradient id="ailab-grad" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
+              <stop offset="0" stop-color="#3b82f6"/>
+              <stop offset="1" stop-color="#1d4ed8"/>
+            </linearGradient>
+          </defs>
+          <rect width="24" height="24" rx="6" fill="url(#ailab-grad)"/>
+          <path d="M10.5 5h3v3.8l4 7.7a2 2 0 0 1-1.8 3H8.3a2 2 0 0 1-1.8-3l4-7.7V5Z" fill="#fff"/>
+          <path d="M8.4 15.5h7.2" stroke="#1d4ed8" stroke-width="1.1" stroke-linecap="round" opacity=".55"/>
+          <path d="M18.5 4.2l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6.6-1.4Z" fill="#fff"/>
+        </svg>
+        <div>
+          <h1 class="text-2xl font-semibold">AI Lab</h1>
+          <p class="text-sm text-neutral-500">A request lab for creating, testing, comparing and benchmarking AI API calls.</p>
+        </div>
       </div>
       <div class="flex gap-2 text-xs">
         @for (entry of providerStatus() | keyvalue; track entry.key) {
@@ -30,7 +44,7 @@
       />
       <button
         (click)="createWorkspace()"
-        class="flex items-center gap-1.5 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900"
+        class="flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
       >
         <app-icon name="plus" class="h-4 w-4" /> Create
       </button>
