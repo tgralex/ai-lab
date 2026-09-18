@@ -19,6 +19,10 @@ import { MIN_PANEL_WIDTH, MAX_PANEL_WIDTH, clamp, loadPanelWidth, savePanelWidth
 
 type Tab = 'current' | 'history' | 'compare' | 'models';
 
+/** Matches the provider APIs' own default sampling temperature — shown pre-filled on the
+ * slider rather than leaving it blank/unset. */
+const DEFAULT_TEMPERATURE = 1;
+
 interface MultiModelRunRow {
   providerId: string;
   modelId: string;
@@ -676,6 +680,9 @@ function toDraft(request: AiRequestDefinition): CreateRequestBody {
     userContextText: request.userContext.text,
     streamingEnabled: request.streamingEnabled,
     maxOutputTokens: request.maxOutputTokens,
+    // Always a concrete value in the draft (never left null) so the temperature slider always
+    // has something to show, even for a request saved before this field existed.
+    temperature: request.temperature ?? DEFAULT_TEMPERATURE,
     reasoningEffort: request.reasoning?.effort ?? null,
     promptCacheKey: request.promptCacheKey,
     structuredOutputSchema: request.structuredOutputSchema,

@@ -48,6 +48,11 @@ public static class GrokRequestBuilder
             body["max_tokens"] = maxTokens;
         }
 
+        if (context.Temperature is { } temperature)
+        {
+            body["temperature"] = temperature;
+        }
+
         if (!string.IsNullOrEmpty(context.ReasoningEffort))
         {
             body["reasoning_effort"] = context.ReasoningEffort;

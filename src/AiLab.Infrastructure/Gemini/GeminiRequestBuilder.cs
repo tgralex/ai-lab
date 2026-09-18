@@ -59,6 +59,11 @@ public static class GeminiRequestBuilder
             generationConfig["maxOutputTokens"] = modelMaxTokens;
         }
 
+        if (context.Temperature is { } temperature)
+        {
+            generationConfig["temperature"] = temperature;
+        }
+
         if (!string.IsNullOrEmpty(context.ReasoningEffort))
         {
             // Direct passthrough — Gemini's thinkingLevel accepts "low"/"medium"/"high" natively,

@@ -16,6 +16,7 @@ public static class RequestEndpoints
         string? UserContextText,
         bool StreamingEnabled,
         int? MaxOutputTokens,
+        double? Temperature,
         string? ReasoningEffort,
         string? PromptCacheKey,
         string? StructuredOutputSchema,
@@ -47,6 +48,7 @@ public static class RequestEndpoints
                 UserContext = new ContentBlock { Text = body.UserContextText ?? string.Empty, AttachmentIds = body.UserContextAttachmentIds ?? [] },
                 StreamingEnabled = body.StreamingEnabled,
                 MaxOutputTokens = body.MaxOutputTokens,
+                Temperature = body.Temperature,
                 Reasoning = string.IsNullOrEmpty(body.ReasoningEffort) ? null : new ReasoningConfig { Effort = body.ReasoningEffort },
                 PromptCacheKey = body.PromptCacheKey,
                 StructuredOutputSchema = body.StructuredOutputSchema,
@@ -105,6 +107,7 @@ public static class RequestEndpoints
             request.UserContext = new ContentBlock { Text = body.UserContextText ?? string.Empty, AttachmentIds = body.UserContextAttachmentIds ?? request.UserContext.AttachmentIds };
             request.StreamingEnabled = body.StreamingEnabled;
             request.MaxOutputTokens = body.MaxOutputTokens;
+            request.Temperature = body.Temperature;
             request.Reasoning = string.IsNullOrEmpty(body.ReasoningEffort) ? null : new ReasoningConfig { Effort = body.ReasoningEffort };
             request.PromptCacheKey = body.PromptCacheKey;
             request.StructuredOutputSchema = body.StructuredOutputSchema;

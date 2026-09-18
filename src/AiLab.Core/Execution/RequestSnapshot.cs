@@ -26,6 +26,8 @@ public sealed class RequestSnapshot
 
     public int? MaxOutputTokens { get; init; }
 
+    public double? Temperature { get; init; }
+
     public string? StructuredOutputSchema { get; init; }
 
     public string? PromptCacheKey { get; init; }

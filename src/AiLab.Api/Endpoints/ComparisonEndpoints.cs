@@ -12,6 +12,7 @@ public static class ComparisonEndpoints
         string Provider,
         string Model,
         string? Reasoning,
+        double? Temperature,
         Guid? RunId,
         double? TotalMs,
         double? TtftMs,
@@ -58,6 +59,7 @@ public static class ComparisonEndpoints
                     // see AiRequestExecutor.DefaultReasoningEffort) rather than the raw saved
                     // request field, which is often left unset.
                     latestRun?.Snapshot.ReasoningEffort ?? request.Reasoning?.Effort,
+                    latestRun?.Snapshot.Temperature ?? request.Temperature,
                     latestRun?.Id,
                     latestRun?.TotalDuration?.TotalMilliseconds,
                     latestRun?.TimeToFirstOutputToken?.TotalMilliseconds,
