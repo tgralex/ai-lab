@@ -6,7 +6,7 @@ import * as dagre from 'dagre';
 import { ApiService } from '../../core/api.service';
 import {
   ExecutionPlan, AiRequestDefinition, ExecutionPlanRun, PlanExecutionEvent, ExecutionRun,
-  ExecutionLevel, ExecutionPlanValidationResult, Attachment,
+  ExecutionLevel, ExecutionPlanValidationResult, Attachment, Workspace,
 } from '../../core/models';
 import { formatTimeSpan, formatCost, formatBytes, timeSpanToMs } from '../../shared/format';
 import { Icon } from '../../shared/icon';
@@ -66,6 +66,7 @@ export class PlanView implements OnInit, OnDestroy {
   readonly userContextHint = '— supports {{workspace.var}}, {{RequestName.output}}, {{RequestName.json.path}}';
 
   workspaceId = signal('');
+  workspace = signal<Workspace | null>(null);
   planId = signal('');
   plan = signal<ExecutionPlan | null>(null);
   levels = signal<ExecutionLevel[]>([]);
@@ -265,12 +266,14 @@ export class PlanView implements OnInit, OnDestroy {
   }
 
   async loadAll() {
-    const [detail, requests, runs, attachments] = await Promise.all([
+    const [detail, requests, runs, attachments, workspace] = await Promise.all([
       this.api.getExecutionPlan(this.planId()),
       this.api.listRequests(this.workspaceId()),
       this.api.listPlanRuns(this.planId()),
       this.api.listAttachments(this.workspaceId()),
+      this.api.getWorkspace(this.workspaceId()),
     ]);
+    this.workspace.set(workspace);
     this.plan.set(detail.plan);
     this.levels.set(detail.levels);
     this.validation.set(detail.validation);
