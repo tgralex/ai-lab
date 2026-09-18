@@ -357,6 +357,39 @@ export class WorkspaceShell implements OnInit, OnDestroy {
     this.confirmingDelete.set(false);
   }
 
+  // --- Drag-and-drop reordering of the task list. Reorders the list live as you drag over each
+  // row (so the list always shows exactly what dropping now would produce), then persists the
+  // whole new order once the drag ends — this is also the order Execution Plans list tasks in. ---
+  draggingRequestId = signal<string | null>(null);
+
+  onRequestReorderDragStart(event: DragEvent, request: AiRequestDefinition) {
+    this.draggingRequestId.set(request.id);
+    event.dataTransfer?.setData('text/plain', request.id);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  }
+
+  onRequestReorderDragOver(event: DragEvent, overRequest: AiRequestDefinition) {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    const draggingId = this.draggingRequestId();
+    if (!draggingId || draggingId === overRequest.id) return;
+
+    const list = [...this.requests()];
+    const fromIndex = list.findIndex(r => r.id === draggingId);
+    const toIndex = list.findIndex(r => r.id === overRequest.id);
+    if (fromIndex === -1 || toIndex === -1) return;
+    const [moved] = list.splice(fromIndex, 1);
+    list.splice(toIndex, 0, moved);
+    this.requests.set(list);
+  }
+
+  async onRequestReorderDragEnd() {
+    const draggingId = this.draggingRequestId();
+    this.draggingRequestId.set(null);
+    if (!draggingId) return;
+    await this.api.reorderRequests(this.workspaceId(), this.requests().map(r => r.id));
+  }
+
   async execute() {
     const selected = this.selectedRequest();
     if (!selected || this.dirty()) return;

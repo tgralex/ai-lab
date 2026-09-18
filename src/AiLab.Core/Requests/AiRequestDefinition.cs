@@ -42,6 +42,11 @@ public sealed class AiRequestDefinition
 
     public string? Notes { get; set; }
 
+    /// <summary>User-controlled display order within its workspace (lower first) — set by dragging
+    /// tasks into place on the workspace page. Ties (e.g. before any manual reordering) break by
+    /// <see cref="Name"/>.</summary>
+    public int SortOrder { get; set; }
+
     public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
 
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;

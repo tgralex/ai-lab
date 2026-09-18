@@ -22,6 +22,7 @@ const ICONS: Record<string, string> = {
   doc: 'M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z M14 3v5h5 M9 13h6 M9 17h6',
   archive: 'M3 4h18v4H3z M4 8v11a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8 M10 12h4',
   unarchive: 'M3 4h18v4H3z M4 8v11a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V8 M10 14l2-2 2 2 M12 12v5',
+  dragHandle: 'M9 6h.01M9 12h.01M9 18h.01M15 6h.01M15 12h.01M15 18h.01',
   spinner: '',
 };
 
