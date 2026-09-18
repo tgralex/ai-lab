@@ -32,9 +32,11 @@
             (dragstart)="onRequestReorderDragStart($event, r)"
             (dragover)="onRequestReorderDragOver($event, r)"
             (dragend)="onRequestReorderDragEnd()"
-            class="group flex cursor-grab items-center gap-2 px-3 py-1.5 text-sm hover:bg-neutral-100 active:cursor-grabbing dark:hover:bg-neutral-900"
-            [class.bg-neutral-100]="selectedRequest()?.id === r.id"
-            [class.dark:bg-neutral-900]="selectedRequest()?.id === r.id"
+            class="group flex cursor-grab items-center gap-2 border-l-2 border-transparent px-3 py-1.5 text-sm hover:bg-neutral-100 active:cursor-grabbing dark:hover:bg-neutral-900"
+            [class.bg-blue-50]="selectedRequest()?.id === r.id"
+            [class.dark:bg-blue-950]="selectedRequest()?.id === r.id"
+            [class.border-blue-600]="selectedRequest()?.id === r.id"
+            [class.font-semibold]="selectedRequest()?.id === r.id"
             [class.opacity-40]="draggingRequestId() === r.id"
           >
             <app-icon name="dragHandle" class="h-3 w-3 shrink-0 text-neutral-300 group-hover:text-neutral-400" />
@@ -418,8 +420,8 @@
                     <li
                       (click)="viewHistoryRun(run)"
                       class="group flex cursor-pointer items-start gap-2 rounded-md px-1 py-2 hover:bg-neutral-100 dark:hover:bg-neutral-900"
-                      [class.bg-neutral-100]="!historyCompareMode() && selectedHistoryRun()?.id === run.id"
-                      [class.dark:bg-neutral-900]="!historyCompareMode() && selectedHistoryRun()?.id === run.id"
+                      [class.bg-neutral-100]="(!historyCompareMode() || viewingRunFromComparison()) && selectedHistoryRun()?.id === run.id"
+                      [class.dark:bg-neutral-900]="(!historyCompareMode() || viewingRunFromComparison()) && selectedHistoryRun()?.id === run.id"
                     >
                       <input
                         type="checkbox"
@@ -474,7 +476,7 @@
                 }
               </div>
               <div class="flex-1 overflow-y-auto p-3">
-                @if (historyCompareMode()) {
+                @if (historyCompareMode() && !viewingRunFromComparison()) {
                   <div class="mb-2 flex items-center justify-between text-xs text-neutral-500">
                     <span>Comparing {{ historyComparisonRuns().length }} runs of this task — click a row for full detail</span>
                     <button type="button" (click)="exitHistoryComparison()" class="flex items-center gap-1 hover:text-neutral-900 dark:hover:text-neutral-100">
@@ -517,6 +519,11 @@
                     </table>
                   </div>
                 } @else {
+                  @if (historyCompareMode() && viewingRunFromComparison()) {
+                    <button type="button" (click)="backToComparison()" class="mb-2 flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100">
+                      <app-icon name="arrowLeft" class="h-3.5 w-3.5" /> Back to comparison
+                    </button>
+                  }
                   <app-run-detail [run]="selectedHistoryRun()" />
                 }
               </div>

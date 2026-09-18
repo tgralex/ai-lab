@@ -13,6 +13,8 @@ public sealed class BenchmarkExportRow
 
     public required string Request { get; init; }
 
+    public required Guid RequestId { get; init; }
+
     public required Guid Run { get; init; }
 
     public required string Provider { get; init; }
@@ -50,7 +52,7 @@ public static class CsvExporter
 {
     private static readonly string[] Header =
     [
-        "Workspace", "ExecutionPlan", "Request", "Run", "Provider", "Model", "Reasoning",
+        "Workspace", "ExecutionPlan", "Request", "RequestId", "Run", "Provider", "Model", "Reasoning",
         "StartedAt", "TotalMs", "TtftMs", "GenerationMs", "InputTokens", "CachedTokens",
         "OutputTokens", "ReasoningTokens", "TokensPerSecond", "EstimatedCost", "ActualCost", "Status",
     ];
@@ -67,6 +69,7 @@ public static class CsvExporter
                 row.Workspace,
                 row.ExecutionPlan ?? "",
                 row.Request,
+                row.RequestId.ToString(),
                 row.Run.ToString(),
                 row.Provider,
                 row.Model,

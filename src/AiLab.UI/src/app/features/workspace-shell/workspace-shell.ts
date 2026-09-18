@@ -83,6 +83,10 @@ export class WorkspaceShell implements OnInit, OnDestroy {
    * doubles as the selection for bulk archive/unarchive. */
   historyCompareSelection = signal<Set<string>>(new Set());
   historyCompareMode = signal(false);
+  /** True while drilled into one run's full detail from the comparison table — keeps
+   * historyCompareMode (and the selection behind it) alive so there's a way back to the table
+   * instead of losing it the moment a row is clicked. */
+  viewingRunFromComparison = signal(false);
   allVisibleHistoryRunsSelected = computed(() => {
     const visible = this.visibleHistoryRuns();
     return visible.length > 0 && visible.every(r => this.historyCompareSelection().has(r.id));
@@ -201,6 +205,7 @@ export class WorkspaceShell implements OnInit, OnDestroy {
     this.selectedHistoryRun.set(null);
     this.historyCompareSelection.set(new Set());
     this.historyCompareMode.set(false);
+    this.viewingRunFromComparison.set(false);
     this.benchmarkResult.set(null);
     this.activeTab.set('current');
     this.applyRuns(await this.api.listRuns(request.id));
@@ -498,7 +503,17 @@ export class WorkspaceShell implements OnInit, OnDestroy {
 
   viewHistoryRun(run: ExecutionRun) {
     this.selectedHistoryRun.set(run);
-    this.historyCompareMode.set(false);
+    if (this.historyCompareMode()) {
+      // Came from (or are still within) a comparison — show this run's detail but keep the
+      // comparison alive behind a "back" link instead of discarding it.
+      this.viewingRunFromComparison.set(true);
+    } else {
+      this.viewingRunFromComparison.set(false);
+    }
+  }
+
+  backToComparison() {
+    this.viewingRunFromComparison.set(false);
   }
 
   toggleHistoryCompareSelection(id: string) {
@@ -526,10 +541,12 @@ export class WorkspaceShell implements OnInit, OnDestroy {
   startHistoryComparison() {
     if (this.historyCompareSelection().size < 2) return;
     this.historyCompareMode.set(true);
+    this.viewingRunFromComparison.set(false);
   }
 
   exitHistoryComparison() {
     this.historyCompareMode.set(false);
+    this.viewingRunFromComparison.set(false);
   }
 
   toggleCompareSelection(id: string) {
