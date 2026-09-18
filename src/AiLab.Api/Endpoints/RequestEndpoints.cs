@@ -26,7 +26,7 @@ public static class RequestEndpoints
     public static void MapRequestEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGet("/api/workspaces/{workspaceId:guid}/requests", async (Guid workspaceId, AiLabDbContext db, CancellationToken ct) =>
-            Results.Ok(await db.Requests.Where(r => r.WorkspaceId == workspaceId).OrderBy(r => r.Name).ToListAsync(ct)));
+            Results.Ok(await db.Requests.Where(r => r.WorkspaceId == workspaceId).OrderBy(r => r.SortOrder).ThenBy(r => r.Name).ToListAsync(ct)));
 
         app.MapPost("/api/workspaces/{workspaceId:guid}/requests", async (Guid workspaceId, CreateRequestBody body, AiLabDbContext db, CancellationToken ct) =>
         {
@@ -51,11 +51,30 @@ public static class RequestEndpoints
                 PromptCacheKey = body.PromptCacheKey,
                 StructuredOutputSchema = body.StructuredOutputSchema,
                 Tags = body.Tags ?? [],
+                SortOrder = await NextSortOrderAsync(workspaceId, db, ct),
             };
 
             db.Requests.Add(request);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/requests/{request.Id}", request);
+        });
+
+        // Client sends the workspace's full task list in the user's desired order after a
+        // drag-and-drop reorder; each request's SortOrder becomes its index in that list.
+        app.MapPut("/api/workspaces/{workspaceId:guid}/requests/reorder", async (Guid workspaceId, List<Guid> orderedIds, AiLabDbContext db, CancellationToken ct) =>
+        {
+            var requests = await db.Requests.Where(r => r.WorkspaceId == workspaceId && orderedIds.Contains(r.Id)).ToListAsync(ct);
+            var requestsById = requests.ToDictionary(r => r.Id);
+            for (var i = 0; i < orderedIds.Count; i++)
+            {
+                if (requestsById.TryGetValue(orderedIds[i], out var request))
+                {
+                    request.SortOrder = i;
+                }
+            }
+
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
         });
 
         app.MapGet("/api/requests/{id:guid}", async (Guid id, AiLabDbContext db, CancellationToken ct) =>
@@ -118,6 +137,7 @@ public static class RequestEndpoints
             }
 
             var clone = original.Clone(newName);
+            clone.SortOrder = await NextSortOrderAsync(original.WorkspaceId, db, ct);
             db.Requests.Add(clone);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/requests/{clone.Id}", clone);
@@ -128,5 +148,11 @@ public static class RequestEndpoints
                 .Where(r => r.AiRequestId == id)
                 .OrderByDescending(r => r.StartedAt)
                 .ToListAsync(ct)));
+    }
+
+    private static async Task<int> NextSortOrderAsync(Guid workspaceId, AiLabDbContext db, CancellationToken ct)
+    {
+        var maxOrder = await db.Requests.Where(r => r.WorkspaceId == workspaceId).Select(r => (int?)r.SortOrder).MaxAsync(ct);
+        return (maxOrder ?? -1) + 1;
     }
 }

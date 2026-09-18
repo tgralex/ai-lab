@@ -16,7 +16,7 @@ public static class ExecutionPlanEndpoints
     /// <summary>Id is null for a node the client just added this edit session (server mints one);
     /// non-null for an existing node being round-tripped so its identity — and any history/bindings
     /// keyed on it — stays stable across saves.</summary>
-    public record PlanRequestDto(Guid? Id, Guid AiRequestId, string? Label, bool IsFinalOutput);
+    public record PlanRequestDto(Guid? Id, Guid AiRequestId, string? Label, bool IsFinalOutput, double? PositionX, double? PositionY);
 
     public record CreatePlanBody(string Name, List<PlanRequestDto> Requests, List<DependencyDto> Dependencies);
 
@@ -40,6 +40,8 @@ public static class ExecutionPlanEndpoints
                 AiRequestId = r.AiRequestId,
                 Label = r.Label,
                 IsFinalOutput = r.IsFinalOutput,
+                PositionX = r.PositionX,
+                PositionY = r.PositionY,
             }));
             plan.Dependencies.AddRange(body.Dependencies.Select(d => new ExecutionPlanDependency { FromNodeId = d.From, ToNodeId = d.To }));
 
@@ -93,6 +95,8 @@ public static class ExecutionPlanEndpoints
                     var node = plan.Requests.First(existing => existing.Id == dto.Id.Value);
                     node.Label = dto.Label;
                     node.IsFinalOutput = dto.IsFinalOutput;
+                    node.PositionX = dto.PositionX;
+                    node.PositionY = dto.PositionY;
                 }
                 else
                 {
@@ -102,6 +106,8 @@ public static class ExecutionPlanEndpoints
                         AiRequestId = dto.AiRequestId,
                         Label = dto.Label,
                         IsFinalOutput = dto.IsFinalOutput,
+                        PositionX = dto.PositionX,
+                        PositionY = dto.PositionY,
                     });
                 }
             }

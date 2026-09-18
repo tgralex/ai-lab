@@ -51,6 +51,7 @@ export interface AiRequestDefinition {
   retryPolicy: RetryPolicy;
   tags: string[];
   notes: string | null;
+  sortOrder: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -264,6 +265,8 @@ export interface ExecutionPlanRequest {
   aiRequestId: string;
   label: string | null;
   isFinalOutput: boolean;
+  positionX: number | null;
+  positionY: number | null;
 }
 
 export interface ExecutionPlanDependency {

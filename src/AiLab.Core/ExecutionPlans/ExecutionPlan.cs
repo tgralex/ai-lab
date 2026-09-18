@@ -37,6 +37,12 @@ public sealed class ExecutionPlanRequest
 
     public bool IsFinalOutput { get; set; }
 
+    /// <summary>Manually-dragged canvas position. Null means "not yet placed by hand" — the
+    /// editor auto-layouts the node instead (see plan-view.ts's dagre pass).</summary>
+    public double? PositionX { get; set; }
+
+    public double? PositionY { get; set; }
+
     public string EffectiveLabel(AiRequestDefinition request) =>
         string.IsNullOrWhiteSpace(Label) ? request.Name : Label!;
 }

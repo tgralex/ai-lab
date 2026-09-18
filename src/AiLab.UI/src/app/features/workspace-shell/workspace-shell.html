@@ -28,10 +28,16 @@
       <ul>
         @for (r of requests(); track r.id) {
           <li
-            class="group flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-900"
+            draggable="true"
+            (dragstart)="onRequestReorderDragStart($event, r)"
+            (dragover)="onRequestReorderDragOver($event, r)"
+            (dragend)="onRequestReorderDragEnd()"
+            class="group flex cursor-grab items-center gap-2 px-3 py-1.5 text-sm hover:bg-neutral-100 active:cursor-grabbing dark:hover:bg-neutral-900"
             [class.bg-neutral-100]="selectedRequest()?.id === r.id"
             [class.dark:bg-neutral-900]="selectedRequest()?.id === r.id"
+            [class.opacity-40]="draggingRequestId() === r.id"
           >
+            <app-icon name="dragHandle" class="h-3 w-3 shrink-0 text-neutral-300 group-hover:text-neutral-400" />
             <input
               type="checkbox"
               class="shrink-0"

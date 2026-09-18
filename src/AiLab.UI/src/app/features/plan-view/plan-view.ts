@@ -24,6 +24,9 @@ interface EditNode {
   aiRequestId: string;
   label: string | null;
   isFinalOutput: boolean;
+  /** Manually-dragged canvas position; null means "auto-place via dagre". */
+  x: number | null;
+  y: number | null;
 }
 
 interface GraphNode {
@@ -98,8 +101,8 @@ export class PlanView implements OnInit, OnDestroy {
     if (this.editingEdgeIndex() !== null) return true;
     if (this.editName().trim() !== plan.name) return true;
 
-    const savedNodes = new Set(plan.requests.map(r => `${r.id}|${r.aiRequestId}|${r.label ?? ''}|${r.isFinalOutput}`));
-    const editNodesSet = new Set(this.editNodes().map(n => `${n.id}|${n.aiRequestId}|${n.label ?? ''}|${n.isFinalOutput}`));
+    const savedNodes = new Set(plan.requests.map(r => `${r.id}|${r.aiRequestId}|${r.label ?? ''}|${r.isFinalOutput}|${r.positionX ?? ''}|${r.positionY ?? ''}`));
+    const editNodesSet = new Set(this.editNodes().map(n => `${n.id}|${n.aiRequestId}|${n.label ?? ''}|${n.isFinalOutput}|${n.x ?? ''}|${n.y ?? ''}`));
     if (savedNodes.size !== editNodesSet.size || [...savedNodes].some(k => !editNodesSet.has(k))) return true;
 
     const savedDeps = new Set(plan.dependencies.map(d => `${d.fromNodeId}>${d.toNodeId}`));
@@ -171,12 +174,16 @@ export class PlanView implements OnInit, OnDestroy {
       const gNode = g.node(n.id);
       const request = requestsById.get(n.aiRequestId);
       if (!request || !gNode) continue;
+      // A node the user has dragged keeps its own position instead of dagre's — dagre still lays
+      // it out (it needs every node placed to route edges sensibly around it), we just ignore that
+      // result for this node. Undragged nodes fall through to the auto-layout position as before.
+      const hasManualPosition = n.x != null && n.y != null;
       result.push({
         id: n.id,
         request,
         label: this.effectiveLabel(n),
-        x: gNode.x - NODE_WIDTH / 2,
-        y: gNode.y - NODE_HEIGHT / 2,
+        x: hasManualPosition ? n.x! : gNode.x - NODE_WIDTH / 2,
+        y: hasManualPosition ? n.y! : gNode.y - NODE_HEIGHT / 2,
         width: NODE_WIDTH,
         height: NODE_HEIGHT,
         isFinalOutput: n.isFinalOutput,
@@ -230,6 +237,8 @@ export class PlanView implements OnInit, OnDestroy {
   ngOnDestroy() {
     window.removeEventListener('mousemove', this.onResizeMove);
     window.removeEventListener('mouseup', this.onResizeUp);
+    window.removeEventListener('mousemove', this.onNodeDragMove);
+    window.removeEventListener('mouseup', this.onNodeDragUp);
     if (this.tickHandle) clearInterval(this.tickHandle);
   }
 
@@ -282,7 +291,7 @@ export class PlanView implements OnInit, OnDestroy {
     // Round-trip each node's saved `id` (not a fresh one) — the backend keeps identities stable
     // across saves only when the client sends back the id of every node it isn't deleting, which
     // is what keeps dependency edges, run-history attribution, and bindings pointed at the right node.
-    this.editNodes.set(plan.requests.map(r => ({ id: r.id, aiRequestId: r.aiRequestId, label: r.label, isFinalOutput: r.isFinalOutput })));
+    this.editNodes.set(plan.requests.map(r => ({ id: r.id, aiRequestId: r.aiRequestId, label: r.label, isFinalOutput: r.isFinalOutput, x: r.positionX, y: r.positionY })));
     this.editDependencies.set(plan.dependencies.map(d => ({ from: d.fromNodeId, to: d.toNodeId })));
     this.addEdgeFrom.set('');
     this.addEdgeTo.set('');
@@ -311,7 +320,13 @@ export class PlanView implements OnInit, OnDestroy {
     const existingCount = this.editNodes().filter(n => n.aiRequestId === request.id).length;
     const label = existingCount === 0 ? null : `${request.name} (${existingCount + 1})`;
     const id = crypto.randomUUID();
-    this.editNodes.set([...this.editNodes(), { id, aiRequestId: request.id, label, isFinalOutput: false }]);
+    this.editNodes.set([...this.editNodes(), { id, aiRequestId: request.id, label, isFinalOutput: false, x: null, y: null }]);
+  }
+
+  /** Clears every node's manually-dragged position, handing layout back to dagre. */
+  resetLayout() {
+    if (this.executing()) return;
+    this.editNodes.set(this.editNodes().map(n => ({ ...n, x: null, y: null })));
   }
 
   pendingRemoveNodeId = signal<string | null>(null);
@@ -552,8 +567,13 @@ export class PlanView implements OnInit, OnDestroy {
   }
 
   /** Routes a node click to either completing/canceling an in-progress connection, or the normal
-   * select-for-detail-panel behavior. */
+   * select-for-detail-panel behavior. Suppressed right after an actual drag (see startNodeDrag)
+   * so releasing a dragged node doesn't also toggle its selection. */
   onNodeClick(nodeId: string) {
+    if (this.dragMoved) {
+      this.dragMoved = false;
+      return;
+    }
     const from = this.connectingFromNodeId();
     if (from) {
       this.connectingFromNodeId.set(null);
@@ -561,6 +581,51 @@ export class PlanView implements OnInit, OnDestroy {
       return;
     }
     this.selectNode(nodeId);
+  }
+
+  // --- Drag an existing node to reposition it on the canvas. Once dragged, the node keeps that
+  // exact spot (see the `hasManualPosition` check in nodes()) instead of dagre's auto-layout,
+  // until "Reset Layout" (resetLayout()) clears every node's position back to null. ---
+  private draggingNodeId: string | null = null;
+  private dragPointerStartX = 0;
+  private dragPointerStartY = 0;
+  private dragNodeStartX = 0;
+  private dragNodeStartY = 0;
+  private dragMoved = false;
+  private readonly onNodeDragMove = (e: MouseEvent) => this.handleNodeDragMove(e);
+  private readonly onNodeDragUp = () => this.stopNodeDrag();
+
+  startNodeDrag(event: MouseEvent, node: GraphNode) {
+    if (this.executing() || this.connectingFromNodeId()) return;
+    event.stopPropagation();
+    this.draggingNodeId = node.id;
+    this.dragPointerStartX = event.clientX;
+    this.dragPointerStartY = event.clientY;
+    this.dragNodeStartX = node.x;
+    this.dragNodeStartY = node.y;
+    this.dragMoved = false;
+    window.addEventListener('mousemove', this.onNodeDragMove);
+    window.addEventListener('mouseup', this.onNodeDragUp);
+  }
+
+  private handleNodeDragMove(event: MouseEvent) {
+    const id = this.draggingNodeId;
+    if (!id) return;
+    const dx = event.clientX - this.dragPointerStartX;
+    const dy = event.clientY - this.dragPointerStartY;
+    // Small threshold so a plain click (mousedown+mouseup with a pixel or two of jitter) doesn't
+    // get treated as a drag and start pinning the node in place.
+    if (!this.dragMoved && Math.hypot(dx, dy) < 3) return;
+    this.dragMoved = true;
+    const x = Math.max(0, this.dragNodeStartX + dx);
+    const y = Math.max(0, this.dragNodeStartY + dy);
+    this.editNodes.set(this.editNodes().map(n => (n.id === id ? { ...n, x, y } : n)));
+  }
+
+  private stopNodeDrag() {
+    window.removeEventListener('mousemove', this.onNodeDragMove);
+    window.removeEventListener('mouseup', this.onNodeDragUp);
+    this.draggingNodeId = null;
   }
 
   private tryConnect(from: string, to: string) {
@@ -641,6 +706,8 @@ export class PlanView implements OnInit, OnDestroy {
       aiRequestId: n.aiRequestId,
       label: n.label,
       isFinalOutput: n.isFinalOutput,
+      positionX: n.x,
+      positionY: n.y,
     }));
 
     this.saving.set(true);
