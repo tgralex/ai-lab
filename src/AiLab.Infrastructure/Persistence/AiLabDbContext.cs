@@ -80,6 +80,7 @@ public sealed class AiLabDbContext(DbContextOptions<AiLabDbContext> options) : D
             builder.Property(r => r.InputBindings).HasConversion(JsonValueConverter.InputBindingList, JsonValueConverter.InputBindingListComparer);
             builder.Property(r => r.ProviderSettings).HasConversion(JsonValueConverter.StringDictionary, JsonValueConverter.StringDictionaryComparer);
             builder.Property(r => r.Tags).HasConversion(JsonValueConverter.StringList, JsonValueConverter.StringListComparer);
+            builder.Property(r => r.StopSequences).HasConversion(JsonValueConverter.StringList, JsonValueConverter.StringListComparer);
         });
 
         modelBuilder.Entity<ExecutionRun>(builder =>

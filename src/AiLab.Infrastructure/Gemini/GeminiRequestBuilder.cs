@@ -64,6 +64,11 @@ public static class GeminiRequestBuilder
             generationConfig["temperature"] = temperature;
         }
 
+        if (context.StopSequences.Count > 0)
+        {
+            generationConfig["stopSequences"] = new JsonArray(context.StopSequences.Select(s => (JsonNode)s).ToArray());
+        }
+
         if (!string.IsNullOrEmpty(context.ReasoningEffort))
         {
             // Direct passthrough — Gemini's thinkingLevel accepts "low"/"medium"/"high" natively,

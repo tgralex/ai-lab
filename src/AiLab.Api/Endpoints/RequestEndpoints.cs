@@ -17,10 +17,12 @@ public static class RequestEndpoints
         bool StreamingEnabled,
         int? MaxOutputTokens,
         double? Temperature,
+        List<string>? StopSequences,
         string? ReasoningEffort,
         string? PromptCacheKey,
         string? StructuredOutputSchema,
         List<string>? Tags,
+        Dictionary<string, string>? ProviderSettings,
         List<Guid>? CachedContextAttachmentIds,
         List<Guid>? UserContextAttachmentIds);
 
@@ -49,10 +51,12 @@ public static class RequestEndpoints
                 StreamingEnabled = body.StreamingEnabled,
                 MaxOutputTokens = body.MaxOutputTokens,
                 Temperature = body.Temperature,
+                StopSequences = body.StopSequences ?? [],
                 Reasoning = string.IsNullOrEmpty(body.ReasoningEffort) ? null : new ReasoningConfig { Effort = body.ReasoningEffort },
                 PromptCacheKey = body.PromptCacheKey,
                 StructuredOutputSchema = body.StructuredOutputSchema,
                 Tags = body.Tags ?? [],
+                ProviderSettings = body.ProviderSettings ?? new Dictionary<string, string>(),
                 SortOrder = await NextSortOrderAsync(workspaceId, db, ct),
             };
 
@@ -108,10 +112,12 @@ public static class RequestEndpoints
             request.StreamingEnabled = body.StreamingEnabled;
             request.MaxOutputTokens = body.MaxOutputTokens;
             request.Temperature = body.Temperature;
+            request.StopSequences = body.StopSequences ?? [];
             request.Reasoning = string.IsNullOrEmpty(body.ReasoningEffort) ? null : new ReasoningConfig { Effort = body.ReasoningEffort };
             request.PromptCacheKey = body.PromptCacheKey;
             request.StructuredOutputSchema = body.StructuredOutputSchema;
             request.Tags = body.Tags ?? [];
+            request.ProviderSettings = body.ProviderSettings ?? new Dictionary<string, string>();
             request.UpdatedAt = DateTimeOffset.UtcNow;
 
             await db.SaveChangesAsync(ct);

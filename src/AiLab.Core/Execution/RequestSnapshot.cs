@@ -28,6 +28,8 @@ public sealed class RequestSnapshot
 
     public double? Temperature { get; init; }
 
+    public IReadOnlyList<string> StopSequences { get; init; } = [];
+
     public string? StructuredOutputSchema { get; init; }
 
     public string? PromptCacheKey { get; init; }

@@ -59,6 +59,11 @@ export class WorkspaceShell implements OnInit, OnDestroy {
 
   selectedRequest = signal<AiRequestDefinition | null>(null);
   draft = signal<CreateRequestBody | null>(null);
+  // Provider settings are stored on the draft as a plain Record<string,string> (what the API
+  // expects), but editing key-value pairs directly against a Record is awkward — a duplicate or
+  // half-typed key would silently collide. This array is the actual edit surface; every change
+  // re-derives draft().providerSettings from it.
+  providerSettingsRows = signal<{ key: string; value: string }[]>([]);
   dirty = signal(false);
   uploadingCached = signal(false);
   uploadingUser = signal(false);
@@ -207,6 +212,7 @@ export class WorkspaceShell implements OnInit, OnDestroy {
   async selectRequest(request: AiRequestDefinition) {
     this.selectedRequest.set(request);
     this.draft.set(toDraft(request));
+    this.providerSettingsRows.set(Object.entries(request.providerSettings).map(([key, value]) => ({ key, value })));
     this.dirty.set(false);
     this.streamingOutput.set('');
     this.currentRun.set(null);
@@ -273,6 +279,58 @@ export class WorkspaceShell implements OnInit, OnDestroy {
 
   markDirty() {
     this.dirty.set(true);
+  }
+
+  // --- Stop sequences: a plain list of strings, edited directly against draft().stopSequences. ---
+  addStopSequence() {
+    const d = this.draft();
+    if (!d) return;
+    this.draft.set({ ...d, stopSequences: [...(d.stopSequences ?? []), ''] });
+    this.markDirty();
+  }
+
+  updateStopSequence(index: number, value: string) {
+    const d = this.draft();
+    if (!d) return;
+    const list = [...(d.stopSequences ?? [])];
+    list[index] = value;
+    this.draft.set({ ...d, stopSequences: list });
+    this.markDirty();
+  }
+
+  removeStopSequence(index: number) {
+    const d = this.draft();
+    if (!d) return;
+    this.draft.set({ ...d, stopSequences: (d.stopSequences ?? []).filter((_, i) => i !== index) });
+    this.markDirty();
+  }
+
+  // --- Provider settings: raw key/value passthrough merged into whatever provider's request body
+  // (e.g. {"top_k": "40"}) — see providerSettingsRows' own comment for why rows, not the Record,
+  // are the actual edit surface. ---
+  addProviderSettingRow() {
+    this.providerSettingsRows.set([...this.providerSettingsRows(), { key: '', value: '' }]);
+  }
+
+  updateProviderSettingRow(index: number, field: 'key' | 'value', value: string) {
+    this.providerSettingsRows.set(this.providerSettingsRows().map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+    this.syncProviderSettingsToDraft();
+  }
+
+  removeProviderSettingRow(index: number) {
+    this.providerSettingsRows.set(this.providerSettingsRows().filter((_, i) => i !== index));
+    this.syncProviderSettingsToDraft();
+  }
+
+  private syncProviderSettingsToDraft() {
+    const d = this.draft();
+    if (!d) return;
+    const providerSettings: Record<string, string> = {};
+    for (const row of this.providerSettingsRows()) {
+      if (row.key.trim()) providerSettings[row.key.trim()] = row.value;
+    }
+    this.draft.set({ ...d, providerSettings });
+    this.markDirty();
   }
 
   onModelChange(evt: { providerId: string; modelId: string }) {
@@ -683,10 +741,12 @@ function toDraft(request: AiRequestDefinition): CreateRequestBody {
     // Always a concrete value in the draft (never left null) so the temperature slider always
     // has something to show, even for a request saved before this field existed.
     temperature: request.temperature ?? DEFAULT_TEMPERATURE,
+    stopSequences: [...request.stopSequences],
     reasoningEffort: request.reasoning?.effort ?? null,
     promptCacheKey: request.promptCacheKey,
     structuredOutputSchema: request.structuredOutputSchema,
     tags: request.tags,
+    providerSettings: { ...request.providerSettings },
     cachedContextAttachmentIds: [...request.cachedContext.attachmentIds],
     userContextAttachmentIds: [...request.userContext.attachmentIds],
   };

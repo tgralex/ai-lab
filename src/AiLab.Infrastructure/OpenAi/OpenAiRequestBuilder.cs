@@ -12,6 +12,10 @@ public static class OpenAiRequestBuilder
 {
     public static JsonObject Build(AiRequestExecutionContext context)
     {
+        // context.StopSequences is deliberately never sent here — unlike OpenAI's older Chat
+        // Completions API, the Responses API has no `stop` parameter at all (confirmed against
+        // OpenAI's own docs and community reports of a hard 400 "Unknown parameter: 'stop'" when
+        // sent). Anthropic, Gemini, and Grok's builders all support it.
         var input = new JsonArray();
 
         if (!string.IsNullOrEmpty(context.SystemPrompt))

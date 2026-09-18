@@ -19,10 +19,12 @@ export interface CreateRequestBody {
   streamingEnabled: boolean;
   maxOutputTokens?: number | null;
   temperature?: number | null;
+  stopSequences?: string[] | null;
   reasoningEffort?: string | null;
   promptCacheKey?: string | null;
   structuredOutputSchema?: string | null;
   tags?: string[] | null;
+  providerSettings?: Record<string, string> | null;
   cachedContextAttachmentIds?: string[] | null;
   userContextAttachmentIds?: string[] | null;
 }
