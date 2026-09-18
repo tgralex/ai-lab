@@ -71,8 +71,14 @@
         <p class="mb-2 text-xs text-neutral-400">Add requests above to build the plan.</p>
       }
       <ul class="mb-4 space-y-1">
-        @for (n of editNodes(); track n.id) {
-          <li class="rounded-md px-1 py-1 text-sm" [class.bg-red-50]="pendingRemoveNodeId() === n.id" [class.dark:bg-red-950]="pendingRemoveNodeId() === n.id">
+        @for (n of orderedEditNodes(); track n.id) {
+          <li
+            class="group rounded-md px-1 py-1 text-sm"
+            [class.bg-red-50]="pendingRemoveNodeId() === n.id"
+            [class.dark:bg-red-950]="pendingRemoveNodeId() === n.id"
+            [class.bg-blue-50]="pendingRemoveNodeId() !== n.id && selectedNodeId() === n.id"
+            [class.dark:bg-blue-950]="pendingRemoveNodeId() !== n.id && selectedNodeId() === n.id"
+          >
             @if (pendingRemoveNodeId() === n.id) {
               <div class="flex items-center justify-between gap-2 text-xs">
                 <span class="min-w-0 flex-1 text-red-600 dark:text-red-400">
@@ -84,19 +90,45 @@
                 </div>
               </div>
             } @else {
-              <div class="flex items-center gap-2">
-                <input
-                  [ngModel]="n.label ?? requestsById().get(n.aiRequestId)?.name ?? ''"
-                  (ngModelChange)="setNodeLabel(n.id, $event)"
+              <div class="flex items-center gap-2" (appClickOutside)="onNodeRowClickOutside(n.id)">
+                @if (editingNodeId() === n.id) {
+                  <input
+                    [ngModel]="editingNodeLabelDraft()"
+                    (ngModelChange)="editingNodeLabelDraft.set($event)"
+                    (keydown.enter)="commitNodeLabelEdit()"
+                    (keydown.escape)="cancelNodeLabelEdit()"
+                    appAutofocusSelect
+                    [title]="requestsById().get(n.aiRequestId)?.name ?? ''"
+                    class="min-w-0 flex-1 rounded-md border border-blue-400 bg-white px-1.5 py-0.5 text-sm dark:bg-neutral-900"
+                  />
+                  <button (click)="commitNodeLabelEdit()" title="Save" class="shrink-0 text-green-600 hover:text-green-700">
+                    <app-icon name="check" class="h-3.5 w-3.5" />
+                  </button>
+                  <button (click)="cancelNodeLabelEdit()" title="Cancel" class="shrink-0 text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100">
+                    <app-icon name="x" class="h-3.5 w-3.5" />
+                  </button>
+                } @else {
+                  <span
+                    (click)="startEditNodeLabel(n)"
+                    [title]="requestsById().get(n.aiRequestId)?.name ?? ''"
+                    class="min-w-0 flex-1 cursor-pointer truncate rounded-md px-1.5 py-0.5 text-sm hover:bg-neutral-100 dark:hover:bg-neutral-900"
+                    [class.font-semibold]="selectedNodeId() === n.id"
+                    [class.text-blue-700]="selectedNodeId() === n.id"
+                    [class.dark:text-blue-300]="selectedNodeId() === n.id"
+                  >{{ effectiveLabel(n) }}</span>
+                }
+                @if (editingNodeId() === n.id || n.isFinalOutput) {
+                  <label class="flex shrink-0 items-center gap-1 text-xs text-neutral-400">
+                    <input type="radio" name="finalOutput" [checked]="n.isFinalOutput" [disabled]="executing()" (change)="setFinalOutputId(n.id)" />
+                    final
+                  </label>
+                }
+                <button
+                  (click)="requestRemoveNode(n.id)"
                   [disabled]="executing()"
-                  [title]="requestsById().get(n.aiRequestId)?.name ?? ''"
-                  class="min-w-0 flex-1 rounded-md border border-neutral-300 bg-white px-1.5 py-0.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
-                />
-                <label class="flex shrink-0 items-center gap-1 text-xs text-neutral-400">
-                  <input type="radio" name="finalOutput" [checked]="n.isFinalOutput" [disabled]="executing()" (change)="setFinalOutputId(n.id)" />
-                  final
-                </label>
-                <button (click)="requestRemoveNode(n.id)" [disabled]="executing()" title="Remove" class="shrink-0 text-neutral-400 hover:text-red-600">
+                  title="Remove"
+                  [class]="editingNodeId() === n.id ? 'shrink-0 text-neutral-400 hover:text-red-600' : 'shrink-0 text-neutral-400 hover:text-red-600 opacity-0 group-hover:opacity-100'"
+                >
                   <app-icon name="trash" class="h-3.5 w-3.5" />
                 </button>
               </div>

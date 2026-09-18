@@ -79,6 +79,58 @@ export class PlanView implements OnInit, OnDestroy {
   editName = signal('');
   editNodes = signal<EditNode[]>([]);
   editNodesById = computed(() => new Map(this.editNodes().map(n => [n.id, n])));
+
+  /** "Nodes in plan" list order: dependency-free nodes first, most-depended-on-chain last (same
+   * depth metric as the backend's DeriveLevels — a node's level is one past its deepest
+   * predecessor), then each node's underlying task's own drag-and-drop SortOrder, then label —
+   * so the list roughly reads top-to-bottom the way the graph executes. */
+  orderedEditNodes = computed<EditNode[]>(() => {
+    const nodes = this.editNodes();
+    const level = this.computeNodeLevels(nodes, this.editDependencies());
+    const requestsById = this.requestsById();
+
+    return [...nodes].sort((a, b) => {
+      const levelDiff = (level.get(a.id) ?? 0) - (level.get(b.id) ?? 0);
+      if (levelDiff !== 0) return levelDiff;
+      const orderDiff = (requestsById.get(a.aiRequestId)?.sortOrder ?? 0) - (requestsById.get(b.aiRequestId)?.sortOrder ?? 0);
+      if (orderDiff !== 0) return orderDiff;
+      return this.effectiveLabel(a).localeCompare(this.effectiveLabel(b));
+    });
+  });
+
+  private computeNodeLevels(nodes: EditNode[], deps: { from: string; to: string }[]): Map<string, number> {
+    const ids = new Set(nodes.map(n => n.id));
+    const inDegree = new Map(nodes.map(n => [n.id, 0]));
+    const adjacency = new Map<string, string[]>(nodes.map(n => [n.id, []]));
+    for (const d of deps) {
+      if (!ids.has(d.from) || !ids.has(d.to)) continue;
+      inDegree.set(d.to, (inDegree.get(d.to) ?? 0) + 1);
+      adjacency.get(d.from)!.push(d.to);
+    }
+
+    const level = new Map<string, number>();
+    const remaining = new Set(ids);
+    let currentLevel = 0;
+    while (remaining.size > 0) {
+      const current = [...remaining].filter(id => (inDegree.get(id) ?? 0) === 0);
+      if (current.length === 0) {
+        // A cycle would leave nodes stuck with a nonzero in-degree forever — validation blocks
+        // saving one, but mid-edit the graph can transiently have one, so bail out rather than
+        // loop forever: dump whatever's left at the current level.
+        for (const id of remaining) level.set(id, currentLevel);
+        break;
+      }
+      for (const id of current) {
+        level.set(id, currentLevel);
+        remaining.delete(id);
+        for (const next of adjacency.get(id) ?? []) {
+          inDegree.set(next, (inDegree.get(next) ?? 0) - 1);
+        }
+      }
+      currentLevel++;
+    }
+    return level;
+  }
   editDependencies = signal<{ from: string; to: string }[]>([]);
   addEdgeFrom = signal<string>('');
   addEdgeTo = signal<string>('');
@@ -306,6 +358,7 @@ export class PlanView implements OnInit, OnDestroy {
     this.pendingRemoveNodeId.set(null);
     this.connectingFromNodeId.set(null);
     this.renamingNodeId.set(null);
+    this.editingNodeId.set(null);
   }
 
   cancelEdits() {
@@ -338,6 +391,40 @@ export class PlanView implements OnInit, OnDestroy {
    * a node's hidden blast radius (silently dropping its edges too) is never a surprise. */
   dependencyCountFor(nodeId: string): number {
     return this.editDependencies().filter(d => d.from === nodeId || d.to === nodeId).length;
+  }
+
+  // --- "Nodes in plan" row label: shown as plain text, like a dependency row — click it to edit,
+  // click away (or Escape) to cancel without saving, Enter or the checkmark to commit. Unlike
+  // dependency-row editing this never shows a discard-confirmation: renaming a node is low-stakes
+  // enough that a plain cancel is the expected behavior. ---
+  editingNodeId = signal<string | null>(null);
+  editingNodeLabelDraft = signal('');
+
+  startEditNodeLabel(n: EditNode) {
+    if (this.executing()) return;
+    this.editingNodeId.set(n.id);
+    this.editingNodeLabelDraft.set(n.label ?? this.requestsById().get(n.aiRequestId)?.name ?? '');
+    // Also selects the node on the canvas — clicking a task's label in the sidebar and clicking
+    // its box on the canvas are the same "focus this node" action, so both highlight each other.
+    if (this.selectedNodeId() !== n.id) {
+      this.selectedNodeId.set(n.id);
+      this.activeDetailTab.set('task');
+    }
+  }
+
+  commitNodeLabelEdit() {
+    const nodeId = this.editingNodeId();
+    if (nodeId === null) return;
+    this.setNodeLabel(nodeId, this.editingNodeLabelDraft());
+    this.editingNodeId.set(null);
+  }
+
+  cancelNodeLabelEdit() {
+    this.editingNodeId.set(null);
+  }
+
+  onNodeRowClickOutside(nodeId: string) {
+    if (this.editingNodeId() === nodeId) this.cancelNodeLabelEdit();
   }
 
   requestRemoveNode(nodeId: string) {
