@@ -173,6 +173,15 @@ export class PlanView implements OnInit, OnDestroy {
   private readonly onResizeMove = (e: MouseEvent) => this.handleResizeMove(e);
   private readonly onResizeUp = () => this.stopResize();
 
+  // --- Right column (Run History / Task / Plan Statistics) width — same resize-and-persist
+  // pattern as the left sidebar, just anchored to the right edge so dragging left grows it. ---
+  rightPanelWidth = signal(loadPanelWidth('plan-right-panel', 420));
+  private resizingRight = false;
+  private resizeRightStartX = 0;
+  private resizeRightStartWidth = 0;
+  private readonly onRightResizeMove = (e: MouseEvent) => this.handleRightResizeMove(e);
+  private readonly onRightResizeUp = () => this.stopRightResize();
+
   executing = signal(false);
   nodeStatuses = signal<Map<string, GraphNode['status']>>(new Map());
   nodeStartTimes = signal<Map<string, number>>(new Map());
@@ -290,6 +299,8 @@ export class PlanView implements OnInit, OnDestroy {
   ngOnDestroy() {
     window.removeEventListener('mousemove', this.onResizeMove);
     window.removeEventListener('mouseup', this.onResizeUp);
+    window.removeEventListener('mousemove', this.onRightResizeMove);
+    window.removeEventListener('mouseup', this.onRightResizeUp);
     window.removeEventListener('mousemove', this.onNodeDragMove);
     window.removeEventListener('mouseup', this.onNodeDragUp);
     if (this.tickHandle) clearInterval(this.tickHandle);
@@ -315,6 +326,29 @@ export class PlanView implements OnInit, OnDestroy {
     this.resizing = false;
     window.removeEventListener('mousemove', this.onResizeMove);
     window.removeEventListener('mouseup', this.onResizeUp);
+  }
+
+  startRightResize(event: MouseEvent) {
+    this.resizingRight = true;
+    this.resizeRightStartX = event.clientX;
+    this.resizeRightStartWidth = this.rightPanelWidth();
+    window.addEventListener('mousemove', this.onRightResizeMove);
+    window.addEventListener('mouseup', this.onRightResizeUp);
+    event.preventDefault();
+  }
+
+  private handleRightResizeMove(e: MouseEvent) {
+    if (!this.resizingRight) return;
+    // Anchored to the right edge — dragging the handle left (negative clientX delta) grows it.
+    const delta = this.resizeRightStartX - e.clientX;
+    this.rightPanelWidth.set(clamp(this.resizeRightStartWidth + delta, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH));
+  }
+
+  private stopRightResize() {
+    if (this.resizingRight) savePanelWidth('plan-right-panel', this.rightPanelWidth());
+    this.resizingRight = false;
+    window.removeEventListener('mousemove', this.onRightResizeMove);
+    window.removeEventListener('mouseup', this.onRightResizeUp);
   }
 
   async loadAll() {
