@@ -44,6 +44,7 @@ export interface AiRequestDefinition {
   structuredOutputSchema: string | null;
   streamingEnabled: boolean;
   maxOutputTokens: number | null;
+  temperature: number | null;
   reasoning: ReasoningConfig | null;
   providerSettings: Record<string, string>;
   promptCacheKey: string | null;
@@ -97,6 +98,7 @@ export interface RequestSnapshot {
   reasoningEffort: string | null;
   streaming: boolean;
   maxOutputTokens: number | null;
+  temperature: number | null;
   structuredOutputSchema: string | null;
   promptCacheKey: string | null;
   providerSettings: Record<string, string>;
@@ -185,6 +187,7 @@ export interface ComparisonRow {
   provider: string;
   model: string;
   reasoning: string | null;
+  temperature: number | null;
   runId: string | null;
   totalMs: number | null;
   ttftMs: number | null;

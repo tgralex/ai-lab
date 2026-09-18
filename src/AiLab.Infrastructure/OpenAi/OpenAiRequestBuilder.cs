@@ -50,6 +50,12 @@ public static class OpenAiRequestBuilder
         {
             body["reasoning"] = new JsonObject { ["effort"] = context.ReasoningEffort };
         }
+        else if (context.Temperature is { } temperature)
+        {
+            // OpenAI's reasoning models reject `temperature` outright, so it's only sent
+            // alongside the absence of `reasoning` above (which only reasoning-capable models get).
+            body["temperature"] = temperature;
+        }
 
         if (!string.IsNullOrEmpty(context.StructuredOutputSchema))
         {

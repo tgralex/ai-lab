@@ -69,6 +69,13 @@ public static class AnthropicRequestBuilder
                 ["budget_tokens"] = MapReasoningEffortToThinkingBudget(context.ReasoningEffort),
             };
         }
+        else if (context.Temperature is { } temperature)
+        {
+            // Anthropic rejects `temperature` outright alongside extended thinking, and its valid
+            // range is 0–1 (narrower than OpenAI/Gemini's 0–2) — clamp rather than let an
+            // otherwise-valid value 400 just because this request happens to target Anthropic.
+            body["temperature"] = Math.Clamp(temperature, 0, 1);
+        }
 
         if (!string.IsNullOrEmpty(context.StructuredOutputSchema))
         {

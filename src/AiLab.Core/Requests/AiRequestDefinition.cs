@@ -28,6 +28,11 @@ public sealed class AiRequestDefinition
 
     public int? MaxOutputTokens { get; set; }
 
+    /// <summary>Sampling temperature, 0–2 (Anthropic caps its own range at 0–1 and rejects
+    /// this alongside extended thinking — see AnthropicRequestBuilder). Null means "use the
+    /// provider's own default" rather than sending an explicit value.</summary>
+    public double? Temperature { get; set; }
+
     public ReasoningConfig? Reasoning { get; set; }
 
     public IReadOnlyDictionary<string, string> ProviderSettings { get; set; } = new Dictionary<string, string>();
@@ -75,6 +80,7 @@ public sealed class AiRequestDefinition
             StructuredOutputSchema = StructuredOutputSchema,
             StreamingEnabled = StreamingEnabled,
             MaxOutputTokens = MaxOutputTokens,
+            Temperature = Temperature,
             Reasoning = Reasoning is null ? null : new ReasoningConfig { Effort = Reasoning.Effort },
             ProviderSettings = new Dictionary<string, string>(ProviderSettings),
             PromptCacheKey = PromptCacheKey,
@@ -101,6 +107,7 @@ public sealed class AiRequestDefinition
             StructuredOutputSchema = StructuredOutputSchema,
             StreamingEnabled = StreamingEnabled,
             MaxOutputTokens = MaxOutputTokens,
+            Temperature = Temperature,
             Reasoning = Reasoning is null ? null : new ReasoningConfig { Effort = Reasoning.Effort },
             ProviderSettings = new Dictionary<string, string>(ProviderSettings),
             PromptCacheKey = PromptCacheKey,

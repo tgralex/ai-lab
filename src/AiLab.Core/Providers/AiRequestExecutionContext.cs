@@ -21,6 +21,8 @@ public sealed class AiRequestExecutionContext
 
     public int? MaxOutputTokens { get; init; }
 
+    public double? Temperature { get; init; }
+
     /// <summary>
     /// The selected model's own max-output-tokens ceiling from the catalog (not the user's
     /// request-level override above). Anthropic requires <c>max_tokens</c> on every call, unlike

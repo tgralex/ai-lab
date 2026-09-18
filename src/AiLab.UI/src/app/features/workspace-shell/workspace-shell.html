@@ -252,6 +252,22 @@
             </div>
           </div>
 
+          <div>
+            <label class="mb-1 flex items-center justify-between text-xs font-medium text-neutral-500">
+              <span>Temperature</span>
+              <span class="font-mono text-neutral-400">{{ (d.temperature ?? 1) | number: '1.1-1' }}</span>
+            </label>
+            <input
+              type="range"
+              min="0"
+              max="2"
+              step="0.1"
+              [ngModel]="d.temperature ?? 1"
+              (ngModelChange)="draft.set({ ...d, temperature: $event }); markDirty()"
+              class="w-full"
+            />
+          </div>
+
           <div class="flex items-center gap-4">
             <label class="flex items-center gap-2 text-sm">
               <input
@@ -505,6 +521,7 @@
                         <tr>
                           <th class="text-left font-normal">Model</th>
                           <th class="text-left font-normal">Effort</th>
+                          <th class="text-right font-normal">Temp</th>
                           <th class="text-left font-normal">Started</th>
                           <th class="text-right font-normal">Total</th>
                           <th class="text-right font-normal">TTFT</th>
@@ -523,6 +540,7 @@
                               </span>
                             </td>
                             <td class="capitalize text-neutral-400">{{ run.snapshot.reasoningEffort ?? '—' }}</td>
+                            <td class="text-right font-mono text-neutral-400">{{ run.snapshot.temperature ?? '—' }}</td>
                             <td>{{ run.startedAt | date: 'short' }}</td>
                             <td class="text-right font-mono">{{ formatTimeSpan(run.totalDuration) }}</td>
                             <td class="text-right font-mono">{{ formatTimeSpan(run.timeToFirstOutputToken) }}</td>
@@ -553,6 +571,7 @@
                             <th class="text-left font-normal">Request</th>
                             <th class="text-left font-normal">Model</th>
                             <th class="text-left font-normal">Effort</th>
+                            <th class="text-right font-normal">Temp</th>
                             <th class="text-right font-normal">Total</th>
                             <th class="text-right font-normal">TTFT</th>
                             <th class="text-right font-normal">Tokens</th>
@@ -571,6 +590,7 @@
                               <td class="py-1">{{ row.requestName }}</td>
                               <td>{{ row.model }}</td>
                               <td class="capitalize text-neutral-400">{{ row.reasoning ?? '—' }}</td>
+                              <td class="text-right font-mono text-neutral-400">{{ row.temperature ?? '—' }}</td>
                               <td class="text-right font-mono">{{ row.totalMs ? (row.totalMs | number: '1.0-0') + 'ms' : '—' }}</td>
                               <td class="text-right font-mono">{{ row.ttftMs ? (row.ttftMs | number: '1.0-0') + 'ms' : '—' }}</td>
                               <td class="text-right font-mono">{{ row.inputTokens + row.outputTokens }}</td>

@@ -18,6 +18,7 @@ export interface CreateRequestBody {
   userContextText?: string | null;
   streamingEnabled: boolean;
   maxOutputTokens?: number | null;
+  temperature?: number | null;
   reasoningEffort?: string | null;
   promptCacheKey?: string | null;
   structuredOutputSchema?: string | null;
