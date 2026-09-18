@@ -121,7 +121,7 @@
                 </div>
                 <div class="ml-auto flex shrink-0 items-center gap-2">
                 @if (editingNodeId() === n.id || n.isFinalOutput) {
-                  <label class="flex shrink-0 items-center gap-1 text-xs text-neutral-400">
+                  <label class="-mt-px flex shrink-0 items-center gap-1 text-xs text-neutral-400">
                     <input type="radio" name="finalOutput" [checked]="n.isFinalOutput" [disabled]="executing()" (change)="setFinalOutputId(n.id)" />
                     final
                   </label>
