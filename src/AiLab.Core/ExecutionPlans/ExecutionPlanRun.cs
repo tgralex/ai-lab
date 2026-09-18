@@ -43,7 +43,7 @@ public sealed class ExecutionGroupRun
 {
     public required int LevelIndex { get; init; }
 
-    public required IReadOnlyList<Guid> AiRequestIds { get; init; }
+    public required IReadOnlyList<Guid> NodeIds { get; init; }
 
     public required IReadOnlyList<Guid> ExecutionRunIds { get; init; }
 

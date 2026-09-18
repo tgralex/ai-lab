@@ -105,6 +105,7 @@ export interface RequestSnapshot {
 export interface ExecutionRun {
   id: string;
   aiRequestId: string;
+  planNodeId: string | null;
   providerId: string;
   requestedModel: string | null;
   actualModel: string | null;
@@ -259,13 +260,15 @@ export interface ProviderCredentialStatus {
 }
 
 export interface ExecutionPlanRequest {
+  id: string;
   aiRequestId: string;
+  label: string | null;
   isFinalOutput: boolean;
 }
 
 export interface ExecutionPlanDependency {
-  fromRequestId: string;
-  toRequestId: string;
+  fromNodeId: string;
+  toNodeId: string;
 }
 
 export interface ExecutionPlan {
@@ -280,7 +283,7 @@ export interface ExecutionPlan {
 
 export interface ExecutionLevel {
   index: number;
-  requestIds: string[];
+  nodeIds: string[];
 }
 
 export interface ExecutionPlanValidationResult {
@@ -296,7 +299,7 @@ export interface PlanDetailResponse {
 
 export interface ExecutionGroupRun {
   levelIndex: number;
-  aiRequestIds: string[];
+  nodeIds: string[];
   executionRunIds: string[];
   wallClockDuration: string;
   cumulativeRequestDuration: string;
@@ -324,6 +327,6 @@ export type PlanExecutionEventKind = 0 | 1 | 2; // NodeStarted NodeCompleted Pla
 export interface PlanExecutionEvent {
   kind: PlanExecutionEventKind;
   timestamp: string;
-  aiRequestId: string | null;
+  planNodeId: string | null;
   run: ExecutionRun | null;
 }

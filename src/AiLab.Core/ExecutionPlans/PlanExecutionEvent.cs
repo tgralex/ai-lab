@@ -21,22 +21,22 @@ public sealed class PlanExecutionEvent
 
     public required DateTimeOffset Timestamp { get; init; }
 
-    public Guid? AiRequestId { get; init; }
+    public Guid? PlanNodeId { get; init; }
 
     public ExecutionRun? Run { get; init; }
 
-    public static PlanExecutionEvent NodeStarted(Guid requestId) => new()
+    public static PlanExecutionEvent NodeStarted(Guid nodeId) => new()
     {
         Kind = PlanExecutionEventKind.NodeStarted,
         Timestamp = DateTimeOffset.UtcNow,
-        AiRequestId = requestId,
+        PlanNodeId = nodeId,
     };
 
-    public static PlanExecutionEvent NodeCompleted(Guid requestId, ExecutionRun run) => new()
+    public static PlanExecutionEvent NodeCompleted(Guid nodeId, ExecutionRun run) => new()
     {
         Kind = PlanExecutionEventKind.NodeCompleted,
         Timestamp = DateTimeOffset.UtcNow,
-        AiRequestId = requestId,
+        PlanNodeId = nodeId,
         Run = run,
     };
 

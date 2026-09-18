@@ -231,7 +231,7 @@ export class ApiService {
     return firstValueFrom(this.http.get<ExecutionPlan[]>(`${this.base}/workspaces/${workspaceId}/execution-plans`));
   }
 
-  createExecutionPlan(workspaceId: string, name: string, requests: { aiRequestId: string; isFinalOutput: boolean }[], dependencies: { from: string; to: string }[]) {
+  createExecutionPlan(workspaceId: string, name: string, requests: { id: string; aiRequestId: string; label: string | null; isFinalOutput: boolean }[], dependencies: { from: string; to: string }[]) {
     return firstValueFrom(this.http.post<ExecutionPlan>(`${this.base}/workspaces/${workspaceId}/execution-plans`, { name, requests, dependencies }));
   }
 
@@ -239,7 +239,7 @@ export class ApiService {
     return firstValueFrom(this.http.get<PlanDetailResponse>(`${this.base}/execution-plans/${id}`));
   }
 
-  updateExecutionPlan(id: string, name: string, requests: { aiRequestId: string; isFinalOutput: boolean }[], dependencies: { from: string; to: string }[]) {
+  updateExecutionPlan(id: string, name: string, requests: { id: string; aiRequestId: string; label: string | null; isFinalOutput: boolean }[], dependencies: { from: string; to: string }[]) {
     return firstValueFrom(this.http.put<ExecutionPlan>(`${this.base}/execution-plans/${id}`, { name, requests, dependencies }));
   }
 

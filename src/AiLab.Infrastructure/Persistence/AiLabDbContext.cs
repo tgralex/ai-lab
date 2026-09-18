@@ -86,6 +86,7 @@ public sealed class AiLabDbContext(DbContextOptions<AiLabDbContext> options) : D
         {
             builder.HasKey(r => r.Id);
             builder.HasOne<AiRequestDefinition>().WithMany().HasForeignKey(r => r.AiRequestId).OnDelete(DeleteBehavior.Cascade);
+            builder.HasIndex(r => r.PlanNodeId);
 
             builder.OwnsOne(r => r.Usage);
             builder.Navigation(r => r.Usage).IsRequired();
@@ -106,8 +107,13 @@ public sealed class AiLabDbContext(DbContextOptions<AiLabDbContext> options) : D
             builder.OwnsMany(p => p.Requests, r =>
             {
                 r.WithOwner().HasForeignKey("ExecutionPlanId");
-                r.Property<int>("Id");
-                r.HasKey("Id");
+                r.HasKey(x => x.Id);
+                // Without this, EF's default Guid-key convention assumes the value is generated on
+                // add — since we always supply our own Id (client- or server-minted), a client-supplied
+                // value on a brand-new node then reads as "this might already exist", and EF emits an
+                // UPDATE instead of an INSERT for it (0 rows affected -> DbUpdateConcurrencyException).
+                r.Property(x => x.Id).ValueGeneratedNever();
+                r.Property(x => x.Label).HasMaxLength(200);
                 r.ToTable("ExecutionPlanRequests");
             });
 
@@ -116,6 +122,10 @@ public sealed class AiLabDbContext(DbContextOptions<AiLabDbContext> options) : D
                 d.WithOwner().HasForeignKey("ExecutionPlanId");
                 d.Property<int>("Id");
                 d.HasKey("Id");
+                // Columns keep their original names — only the C# property names changed (From/ToRequestId
+                // -> From/ToNodeId) when node identity was split from AiRequestId; no data rewrite needed.
+                d.Property(x => x.FromNodeId).HasColumnName("FromRequestId");
+                d.Property(x => x.ToNodeId).HasColumnName("ToRequestId");
                 d.ToTable("ExecutionPlanDependencies");
             });
         });

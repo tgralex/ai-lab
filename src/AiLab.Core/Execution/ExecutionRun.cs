@@ -6,6 +6,11 @@ public sealed class ExecutionRun
 
     public required Guid AiRequestId { get; init; }
 
+    /// <summary>Which ExecutionPlanRequest node produced this run, when it ran as part of a plan
+    /// (null for a standalone/benchmark run). Set post-hoc by ExecutionPlanEngine — AiRequestExecutor
+    /// itself has no notion of plan nodes since it's also used outside plans.</summary>
+    public Guid? PlanNodeId { get; set; }
+
     public required string ProviderId { get; init; }
 
     public string? RequestedModel { get; init; }

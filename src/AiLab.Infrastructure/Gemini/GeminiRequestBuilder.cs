@@ -28,7 +28,12 @@ public static class GeminiRequestBuilder
 
         if (contents.Count == 0)
         {
-            contents.Add(BuildUserContent(string.Empty));
+            // A request driven entirely by its System Prompt (no cached/user context) would
+            // otherwise send an empty `contents` part here — Gemini, like Anthropic, requires the
+            // turn to carry non-empty/non-whitespace text (see AnthropicRequestBuilder for the
+            // equivalent 400 this avoids). A single period satisfies that without adding any real
+            // instruction.
+            contents.Add(BuildUserContent("."));
         }
 
         var body = new JsonObject { ["contents"] = contents };
