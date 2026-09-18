@@ -25,6 +25,12 @@
           <app-icon name="plus" class="h-4 w-4" />
         </button>
       </div>
+      @if (requests().length > 0) {
+        <label class="flex items-center gap-2 px-3 pb-1 text-xs text-neutral-500">
+          <input type="checkbox" [checked]="allRequestsSelected()" (change)="toggleSelectAllRequests()" />
+          Select all
+        </label>
+      }
       <ul>
         @for (r of requests(); track r.id) {
           <li
@@ -420,8 +426,8 @@
                     <li
                       (click)="viewHistoryRun(run)"
                       class="group flex cursor-pointer items-start gap-2 rounded-md px-1 py-2 hover:bg-neutral-100 dark:hover:bg-neutral-900"
-                      [class.bg-neutral-100]="(!historyCompareMode() || viewingRunFromComparison()) && selectedHistoryRun()?.id === run.id"
-                      [class.dark:bg-neutral-900]="(!historyCompareMode() || viewingRunFromComparison()) && selectedHistoryRun()?.id === run.id"
+                      [class.bg-neutral-100]="!historyCompareMode() && selectedHistoryRun()?.id === run.id"
+                      [class.dark:bg-neutral-900]="!historyCompareMode() && selectedHistoryRun()?.id === run.id"
                     >
                       <input
                         type="checkbox"
@@ -476,7 +482,17 @@
                 }
               </div>
               <div class="flex-1 overflow-y-auto p-3">
-                @if (historyCompareMode() && !viewingRunFromComparison()) {
+                <app-run-detail [run]="selectedHistoryRun()" />
+              </div>
+            </div>
+          }
+          @case ('compare') {
+            <div class="flex flex-1 flex-col overflow-hidden">
+              @if (historyCompareMode()) {
+                <!-- Comparing several runs of the SAME task (started from History) — kept
+                     separate from the different-tasks comparison below since the two aren't
+                     the same kind of table. -->
+                <div class="max-h-[40%] shrink-0 overflow-y-auto border-b border-neutral-200 p-2 dark:border-neutral-800">
                   <div class="mb-2 flex items-center justify-between text-xs text-neutral-500">
                     <span>Comparing {{ historyComparisonRuns().length }} runs of this task — click a row for full detail</span>
                     <button type="button" (click)="exitHistoryComparison()" class="flex items-center gap-1 hover:text-neutral-900 dark:hover:text-neutral-100">
@@ -518,66 +534,64 @@
                       </tbody>
                     </table>
                   </div>
-                } @else {
-                  @if (historyCompareMode() && viewingRunFromComparison()) {
+                </div>
+                <div class="flex-1 overflow-y-auto p-3">
+                  @if (viewingRunFromComparison()) {
                     <button type="button" (click)="backToComparison()" class="mb-2 flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100">
                       <app-icon name="arrowLeft" class="h-3.5 w-3.5" /> Back to comparison
                     </button>
                   }
                   <app-run-detail [run]="selectedHistoryRun()" />
-                }
-              </div>
-            </div>
-          }
-          @case ('compare') {
-            <div class="flex flex-1 flex-col overflow-hidden">
-              <div class="max-h-[40%] shrink-0 overflow-y-auto border-b border-neutral-200 p-2 dark:border-neutral-800">
-                @if (comparisonRows().length > 0) {
-                  <div class="overflow-x-auto">
-                    <table class="w-full text-xs">
-                      <thead class="text-neutral-400">
-                        <tr>
-                          <th class="text-left font-normal">Request</th>
-                          <th class="text-left font-normal">Model</th>
-                          <th class="text-left font-normal">Effort</th>
-                          <th class="text-right font-normal">Total</th>
-                          <th class="text-right font-normal">TTFT</th>
-                          <th class="text-right font-normal">Tokens</th>
-                          <th class="text-right font-normal">Cost</th>
-                          <th class="text-right font-normal">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        @for (row of comparisonRows(); track row.requestId) {
-                          <tr
-                            (click)="selectComparisonRow(row)"
-                            class="cursor-pointer border-t border-neutral-100 hover:bg-neutral-100 dark:border-neutral-800 dark:hover:bg-neutral-900"
-                            [class.bg-neutral-100]="selectedComparisonRequestId() === row.requestId"
-                            [class.dark:bg-neutral-900]="selectedComparisonRequestId() === row.requestId"
-                          >
-                            <td class="py-1">{{ row.requestName }}</td>
-                            <td>{{ row.model }}</td>
-                            <td class="capitalize text-neutral-400">{{ row.reasoning ?? '—' }}</td>
-                            <td class="text-right font-mono">{{ row.totalMs ? (row.totalMs | number: '1.0-0') + 'ms' : '—' }}</td>
-                            <td class="text-right font-mono">{{ row.ttftMs ? (row.ttftMs | number: '1.0-0') + 'ms' : '—' }}</td>
-                            <td class="text-right font-mono">{{ row.inputTokens + row.outputTokens }}</td>
-                            <td class="text-right font-mono">{{ formatCost(row.cost) }}</td>
-                            <td class="text-right">{{ row.status }}</td>
+                </div>
+              } @else {
+                <div class="max-h-[40%] shrink-0 overflow-y-auto border-b border-neutral-200 p-2 dark:border-neutral-800">
+                  @if (comparisonRows().length > 0) {
+                    <div class="overflow-x-auto">
+                      <table class="w-full text-xs">
+                        <thead class="text-neutral-400">
+                          <tr>
+                            <th class="text-left font-normal">Request</th>
+                            <th class="text-left font-normal">Model</th>
+                            <th class="text-left font-normal">Effort</th>
+                            <th class="text-right font-normal">Total</th>
+                            <th class="text-right font-normal">TTFT</th>
+                            <th class="text-right font-normal">Tokens</th>
+                            <th class="text-right font-normal">Cost</th>
+                            <th class="text-right font-normal">Status</th>
                           </tr>
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                } @else {
-                  <p class="text-neutral-400">Check requests in the sidebar, then "Compare selected".</p>
-                }
-              </div>
-              <div class="flex-1 overflow-y-auto p-3">
-                @if (loadingComparisonRun()) {
-                  <p class="mb-2 text-xs text-neutral-400">Loading…</p>
-                }
-                <app-run-detail [run]="selectedComparisonRun()" />
-              </div>
+                        </thead>
+                        <tbody>
+                          @for (row of comparisonRows(); track row.requestId) {
+                            <tr
+                              (click)="selectComparisonRow(row)"
+                              class="cursor-pointer border-t border-neutral-100 hover:bg-neutral-100 dark:border-neutral-800 dark:hover:bg-neutral-900"
+                              [class.bg-neutral-100]="selectedComparisonRequestId() === row.requestId"
+                              [class.dark:bg-neutral-900]="selectedComparisonRequestId() === row.requestId"
+                            >
+                              <td class="py-1">{{ row.requestName }}</td>
+                              <td>{{ row.model }}</td>
+                              <td class="capitalize text-neutral-400">{{ row.reasoning ?? '—' }}</td>
+                              <td class="text-right font-mono">{{ row.totalMs ? (row.totalMs | number: '1.0-0') + 'ms' : '—' }}</td>
+                              <td class="text-right font-mono">{{ row.ttftMs ? (row.ttftMs | number: '1.0-0') + 'ms' : '—' }}</td>
+                              <td class="text-right font-mono">{{ row.inputTokens + row.outputTokens }}</td>
+                              <td class="text-right font-mono">{{ formatCost(row.cost) }}</td>
+                              <td class="text-right">{{ row.status }}</td>
+                            </tr>
+                          }
+                        </tbody>
+                      </table>
+                    </div>
+                  } @else {
+                    <p class="text-neutral-400">Check requests in the sidebar, then "Compare selected".</p>
+                  }
+                </div>
+                <div class="flex-1 overflow-y-auto p-3">
+                  @if (loadingComparisonRun()) {
+                    <p class="mb-2 text-xs text-neutral-400">Loading…</p>
+                  }
+                  <app-run-detail [run]="selectedComparisonRun()" />
+                </div>
+              }
             </div>
           }
           @case ('models') {
