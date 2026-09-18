@@ -359,6 +359,7 @@ export class PlanView implements OnInit, OnDestroy {
     this.connectingFromNodeId.set(null);
     this.renamingNodeId.set(null);
     this.editingNodeId.set(null);
+    this.editingNodesSnapshot = null;
   }
 
   cancelEdits() {
@@ -396,14 +397,19 @@ export class PlanView implements OnInit, OnDestroy {
   // --- "Nodes in plan" row label: shown as plain text, like a dependency row — click it to edit,
   // click away (or Escape) to cancel without saving, Enter or the checkmark to commit. Unlike
   // dependency-row editing this never shows a discard-confirmation: renaming a node is low-stakes
-  // enough that a plain cancel is the expected behavior. ---
+  // enough that a plain cancel is the expected behavior. The "final" radio is also reachable while
+  // a row is in this state, so canceling restores label AND isFinalOutput (for every node — setting
+  // final also un-sets whichever node had it before) to how they were when editing started, not
+  // just the label draft; other fields (e.g. a dragged x/y) are left as their current live values.
   editingNodeId = signal<string | null>(null);
   editingNodeLabelDraft = signal('');
+  private editingNodesSnapshot: Map<string, { label: string | null; isFinalOutput: boolean }> | null = null;
 
   startEditNodeLabel(n: EditNode) {
     if (this.executing()) return;
     this.editingNodeId.set(n.id);
     this.editingNodeLabelDraft.set(n.label ?? this.requestsById().get(n.aiRequestId)?.name ?? '');
+    this.editingNodesSnapshot = new Map(this.editNodes().map(node => [node.id, { label: node.label, isFinalOutput: node.isFinalOutput }]));
     // Also selects the node on the canvas — clicking a task's label in the sidebar and clicking
     // its box on the canvas are the same "focus this node" action, so both highlight each other.
     if (this.selectedNodeId() !== n.id) {
@@ -417,10 +423,19 @@ export class PlanView implements OnInit, OnDestroy {
     if (nodeId === null) return;
     this.setNodeLabel(nodeId, this.editingNodeLabelDraft());
     this.editingNodeId.set(null);
+    this.editingNodesSnapshot = null;
   }
 
   cancelNodeLabelEdit() {
+    const snapshot = this.editingNodesSnapshot;
+    if (snapshot) {
+      this.editNodes.set(this.editNodes().map(n => {
+        const saved = snapshot.get(n.id);
+        return saved ? { ...n, label: saved.label, isFinalOutput: saved.isFinalOutput } : n;
+      }));
+    }
     this.editingNodeId.set(null);
+    this.editingNodesSnapshot = null;
   }
 
   onNodeRowClickOutside(nodeId: string) {
