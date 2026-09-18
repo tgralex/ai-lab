@@ -278,12 +278,12 @@
               <text x="20" y="14" font-size="9" fill="#3b82f6" font-weight="600">FINAL OUTPUT</text>
             }
 
-            <!-- "Set as final output" star: top-left corner, always visible — filled blue when this
-                 node already is the final output, hollow gray otherwise (click to make it so; moves
-                 the designation here from wherever it was). -->
+            <!-- "Set as final output" star: bottom-right corner. Shown only when this node already
+                 is the final output (filled blue), or on hover otherwise (hollow gray, click to
+                 make it so) — keeps the corner clear on nodes that aren't the final output. -->
             <g
-              [attr.transform]="'translate(11,11)'"
-              class="cursor-pointer"
+              [attr.transform]="'translate(' + (node.width - 19) + ',' + (node.height - 15) + ')'"
+              [class]="node.isFinalOutput ? 'cursor-pointer' : 'cursor-pointer opacity-0 group-hover:opacity-100'"
               (click)="$event.stopPropagation(); setFinalOutputId(node.id)"
             >
               <title>{{ node.isFinalOutput ? 'Final output' : 'Set as final output' }}</title>

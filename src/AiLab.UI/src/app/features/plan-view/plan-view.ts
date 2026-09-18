@@ -753,6 +753,7 @@ export class PlanView implements OnInit, OnDestroy {
     this.selectedNodeId.set(next);
     if (next) {
       this.activeDetailTab.set('task');
+    } else {
       this.activeTaskSubTab.set('info');
     }
   }
