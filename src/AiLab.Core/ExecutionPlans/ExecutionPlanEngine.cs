@@ -11,6 +11,10 @@ namespace AiLab.Core.ExecutionPlans;
 /// downstream request whose actual deps are already done. Concurrency is gated by two SemaphoreSlims
 /// per node — one global, one per-provider — acquired before the node's AiRequestExecutor call.
 /// Levels from ExecutionPlanGraph.DeriveLevels are used only for *reporting* (group stats).
+///
+/// Nodes are keyed throughout by ExecutionPlanRequest.Id (a node's own identity), not AiRequestId —
+/// the same AiRequestDefinition can run as multiple independent nodes in one plan, so AiRequestId
+/// alone can't identify a node.
 /// </summary>
 public sealed class ExecutionPlanEngine(AiRequestExecutor requestExecutor)
 {
@@ -23,7 +27,7 @@ public sealed class ExecutionPlanEngine(AiRequestExecutor requestExecutor)
         IProgress<PlanExecutionEvent>? progress,
         CancellationToken cancellationToken)
     {
-        var validation = ExecutionPlanGraph.Validate(plan);
+        var validation = ExecutionPlanGraph.Validate(plan, requestsById);
         if (!validation.IsValid)
         {
             throw new InvalidOperationException($"Execution plan is invalid: {string.Join("; ", validation.Errors)}");
@@ -37,16 +41,17 @@ public sealed class ExecutionPlanEngine(AiRequestExecutor requestExecutor)
             StartedAt = DateTimeOffset.UtcNow,
             PlanGraphSnapshotJson = JsonSerializer.Serialize(new
             {
-                Requests = plan.Requests.Select(r => new { r.AiRequestId, r.IsFinalOutput }),
-                Dependencies = plan.Dependencies.Select(d => new { d.FromRequestId, d.ToRequestId }),
+                Requests = plan.Requests.Select(r => new { r.Id, r.AiRequestId, r.Label, r.IsFinalOutput }),
+                Dependencies = plan.Dependencies.Select(d => new { d.FromNodeId, d.ToNodeId }),
             }),
         };
 
+        var nodesById = plan.Requests.ToDictionary(r => r.Id);
         var dependenciesByNode = plan.Requests.ToDictionary(
-            r => r.AiRequestId,
-            r => plan.Dependencies.Where(d => d.ToRequestId == r.AiRequestId).Select(d => d.FromRequestId).ToList());
+            r => r.Id,
+            r => plan.Dependencies.Where(d => d.ToNodeId == r.Id).Select(d => d.FromNodeId).ToList());
 
-        var nodeCompletions = plan.Requests.ToDictionary(r => r.AiRequestId, _ => new TaskCompletionSource<ExecutionRun>());
+        var nodeCompletions = plan.Requests.ToDictionary(r => r.Id, _ => new TaskCompletionSource<ExecutionRun>());
         using var planCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var globalSemaphore = new SemaphoreSlim(options.GlobalMaxConcurrency);
         var providerSemaphores = new Dictionary<string, SemaphoreSlim>();
@@ -69,8 +74,9 @@ public sealed class ExecutionPlanEngine(AiRequestExecutor requestExecutor)
         var nodeTasks = plan.Requests.Select(node => RunNodeAsync(
             node,
             requestsById[node.AiRequestId],
-            dependenciesByNode[node.AiRequestId],
+            dependenciesByNode[node.Id],
             nodeCompletions,
+            nodesById,
             requestsById,
             baseBindingContext,
             modelsForCost.GetValueOrDefault(node.AiRequestId),
@@ -94,17 +100,17 @@ public sealed class ExecutionPlanEngine(AiRequestExecutor requestExecutor)
         planRun.TotalReasoningTokens = completedRuns.Sum(r => r.Usage.ReasoningTokens);
         planRun.TotalEstimatedCost = completedRuns.Sum(r => r.EstimatedTotalCost ?? 0);
 
-        var runsById = completedRuns.ToDictionary(r => r.AiRequestId);
+        var runsByNode = completedRuns.ToDictionary(r => r.PlanNodeId!.Value);
         planRun.Groups = levels.Select(level =>
         {
-            var levelRuns = level.RequestIds.Select(id => runsById[id]).ToList();
+            var levelRuns = level.NodeIds.Select(id => runsByNode[id]).ToList();
             var starts = levelRuns.Where(r => r.StartedAt.HasValue).Select(r => r.StartedAt!.Value).ToList();
             var finishes = levelRuns.Where(r => r.FinishedAt.HasValue).Select(r => r.FinishedAt!.Value).ToList();
 
             return new ExecutionGroupRun
             {
                 LevelIndex = level.Index,
-                AiRequestIds = level.RequestIds,
+                NodeIds = level.NodeIds,
                 ExecutionRunIds = levelRuns.Select(r => r.Id).ToList(),
                 WallClockDuration = starts.Count > 0 && finishes.Count > 0 ? finishes.Max() - starts.Min() : TimeSpan.Zero,
                 CumulativeRequestDuration = TimeSpan.FromMilliseconds(levelRuns.Where(r => r.TotalDuration.HasValue).Sum(r => r.TotalDuration!.Value.TotalMilliseconds)),
@@ -118,8 +124,9 @@ public sealed class ExecutionPlanEngine(AiRequestExecutor requestExecutor)
     private async Task<ExecutionRun> RunNodeAsync(
         ExecutionPlanRequest node,
         AiRequestDefinition request,
-        IReadOnlyList<Guid> dependencyIds,
+        IReadOnlyList<Guid> dependencyNodeIds,
         Dictionary<Guid, TaskCompletionSource<ExecutionRun>> nodeCompletions,
+        IReadOnlyDictionary<Guid, ExecutionPlanRequest> nodesById,
         IReadOnlyDictionary<Guid, AiRequestDefinition> requestsById,
         BindingResolutionContext baseBindingContext,
         ProviderModel? modelForCost,
@@ -131,8 +138,8 @@ public sealed class ExecutionPlanEngine(AiRequestExecutor requestExecutor)
         ExecutionRun run;
         try
         {
-            var upstreamRuns = await Task.WhenAll(dependencyIds.Select(id => nodeCompletions[id].Task));
-            var bindingContext = BuildBindingContext(baseBindingContext, dependencyIds, upstreamRuns, requestsById);
+            var upstreamRuns = await Task.WhenAll(dependencyNodeIds.Select(id => nodeCompletions[id].Task));
+            var bindingContext = BuildBindingContext(baseBindingContext, dependencyNodeIds, upstreamRuns, nodesById, requestsById);
 
             await globalSemaphore.WaitAsync(planCts.Token);
             try
@@ -141,7 +148,7 @@ public sealed class ExecutionPlanEngine(AiRequestExecutor requestExecutor)
                 await providerSemaphore.WaitAsync(planCts.Token);
                 try
                 {
-                    progress?.Report(PlanExecutionEvent.NodeStarted(node.AiRequestId));
+                    progress?.Report(PlanExecutionEvent.NodeStarted(node.Id));
                     run = await ExecuteWithFailurePolicyAsync(request, bindingContext, modelForCost, planCts);
                 }
                 finally
@@ -156,11 +163,12 @@ public sealed class ExecutionPlanEngine(AiRequestExecutor requestExecutor)
         }
         catch (OperationCanceledException)
         {
-            run = BuildCanceledRun(request);
+            run = BuildCanceledRun(request, node.Id);
         }
 
-        progress?.Report(PlanExecutionEvent.NodeCompleted(node.AiRequestId, run));
-        nodeCompletions[node.AiRequestId].TrySetResult(run);
+        run.PlanNodeId = node.Id;
+        progress?.Report(PlanExecutionEvent.NodeCompleted(node.Id, run));
+        nodeCompletions[node.Id].TrySetResult(run);
         return run;
     }
 
@@ -200,14 +208,16 @@ public sealed class ExecutionPlanEngine(AiRequestExecutor requestExecutor)
 
     private static BindingResolutionContext BuildBindingContext(
         BindingResolutionContext baseContext,
-        IReadOnlyList<Guid> dependencyIds,
+        IReadOnlyList<Guid> dependencyNodeIds,
         IReadOnlyList<ExecutionRun> upstreamRuns,
+        IReadOnlyDictionary<Guid, ExecutionPlanRequest> nodesById,
         IReadOnlyDictionary<Guid, AiRequestDefinition> requestsById)
     {
         var priorOutputs = new Dictionary<string, PriorRequestOutput>();
-        for (var i = 0; i < dependencyIds.Count; i++)
+        for (var i = 0; i < dependencyNodeIds.Count; i++)
         {
-            var depRequest = requestsById[dependencyIds[i]];
+            var depNode = nodesById[dependencyNodeIds[i]];
+            var depRequest = requestsById[depNode.AiRequestId];
             var depRun = upstreamRuns[i];
             var outputText = depRun.Output ?? string.Empty;
 
@@ -221,15 +231,19 @@ public sealed class ExecutionPlanEngine(AiRequestExecutor requestExecutor)
                 // Output isn't JSON — {{X.json.path}} bindings against it correctly stay unresolved.
             }
 
-            priorOutputs[depRequest.Name] = new PriorRequestOutput { RawOutputText = outputText, ParsedJson = parsedJson };
+            // Bindings resolve against the node's effective label (Label ?? request.Name), not always
+            // the request's raw Name, so two instances of the same request in one plan are addressable
+            // independently as {{Get a Number.output}} / {{Get a Number (2).output}}.
+            priorOutputs[depNode.EffectiveLabel(depRequest)] = new PriorRequestOutput { RawOutputText = outputText, ParsedJson = parsedJson };
         }
 
         return new BindingResolutionContext { WorkspaceVariables = baseContext.WorkspaceVariables, PriorRequestOutputs = priorOutputs };
     }
 
-    private static ExecutionRun BuildCanceledRun(AiRequestDefinition request) => new()
+    private static ExecutionRun BuildCanceledRun(AiRequestDefinition request, Guid nodeId) => new()
     {
         AiRequestId = request.Id,
+        PlanNodeId = nodeId,
         ProviderId = request.ProviderId,
         RequestedModel = request.ModelId,
         Status = ExecutionStatus.Canceled,

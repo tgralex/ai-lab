@@ -19,11 +19,14 @@ public class ExecutionPlanEngineTests
         UserContext = new ContentBlock { Text = "hi" },
     };
 
+    // Node Id is set equal to the request id, mirroring the pre-existing-data backfill strategy —
+    // keeps every test's edges (already expressed in terms of AiRequestDefinition.Id) working
+    // unchanged now that node identity is distinct from AiRequestId in general.
     private static ExecutionPlan BuildPlan(IReadOnlyList<AiRequestDefinition> requests, IReadOnlyList<(Guid From, Guid To)> edges)
     {
         var plan = new ExecutionPlan { WorkspaceId = Guid.NewGuid(), Name = "test-plan" };
-        plan.Requests.AddRange(requests.Select(r => new ExecutionPlanRequest { AiRequestId = r.Id }));
-        plan.Dependencies.AddRange(edges.Select(e => new ExecutionPlanDependency { FromRequestId = e.From, ToRequestId = e.To }));
+        plan.Requests.AddRange(requests.Select(r => new ExecutionPlanRequest { Id = r.Id, AiRequestId = r.Id }));
+        plan.Dependencies.AddRange(edges.Select(e => new ExecutionPlanDependency { FromNodeId = e.From, ToNodeId = e.To }));
         return plan;
     }
 
@@ -62,8 +65,8 @@ public class ExecutionPlanEngineTests
         var run = await engine.ExecuteAsync(plan, requestsById, new BindingResolutionContext(), new Dictionary<Guid, Core.Models.ProviderModel?>(), new PlanExecutionOptions(), null, CancellationToken.None);
 
         Assert.Equal(2, run.Groups.Count);
-        Assert.Equal(2, run.Groups[0].AiRequestIds.Count); // A, B
-        Assert.Single(run.Groups[1].AiRequestIds); // D
+        Assert.Equal(2, run.Groups[0].NodeIds.Count); // A, B
+        Assert.Single(run.Groups[1].NodeIds); // D
         Assert.Equal(Core.Execution.ExecutionStatus.Completed, run.Status);
     }
 
@@ -228,7 +231,61 @@ public class ExecutionPlanEngineTests
 
         await engine.ExecuteAsync(plan, requestsById, new BindingResolutionContext(), new Dictionary<Guid, Core.Models.ProviderModel?>(), new PlanExecutionOptions(), null, CancellationToken.None);
 
+        // The {{...}} binding resolves inline as before. It must NOT also get restated in an
+        // appended JSON block — a dependency already pulled in by an explicit binding is excluded
+        // from that block (see ExecuteAsync_AlwaysAppendsPriorOutputsAsJson) specifically so a
+        // "sum everything you see" style prompt can't double-count the same upstream value.
         Assert.Equal("Resume data: parsed-resume-json", capturedUserContext);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_AlwaysAppendsPriorOutputsAsJson_EvenWhenTemplateBindingDoesNotMatch()
+    {
+        // "Combine" is reused as two nodes with different upstream dependencies. Its one shared
+        // {{TaskOne.output}} binding is only ever correct for the first instance — the second
+        // instance's real dependency is "TaskTwo", which the hand-written template never mentions.
+        // The auto-appended JSON block should still carry the second instance's actual upstream
+        // output regardless, so the reused request self-heals instead of silently seeing nothing.
+        var taskOne = BuildRequest("TaskOne");
+        taskOne.ModelId = "model-one";
+        var taskTwo = BuildRequest("TaskTwo");
+        taskTwo.ModelId = "model-two";
+        var combine = BuildRequest("Combine");
+        combine.UserContext = new ContentBlock { Text = "{{TaskOne.output}}" };
+
+        var plan = new ExecutionPlan { WorkspaceId = Guid.NewGuid(), Name = "test-plan" };
+        var n1 = Guid.NewGuid();
+        var n2 = Guid.NewGuid();
+        plan.Requests.Add(new ExecutionPlanRequest { Id = n1, AiRequestId = taskOne.Id });
+        plan.Requests.Add(new ExecutionPlanRequest { Id = n2, AiRequestId = taskTwo.Id });
+        plan.Requests.Add(new ExecutionPlanRequest { Id = Guid.NewGuid(), AiRequestId = combine.Id }); // label null -> "Combine"
+        plan.Requests.Add(new ExecutionPlanRequest { Id = Guid.NewGuid(), AiRequestId = combine.Id, Label = "Combine (2)" });
+        plan.Dependencies.Add(new ExecutionPlanDependency { FromNodeId = n1, ToNodeId = plan.Requests[2].Id });
+        plan.Dependencies.Add(new ExecutionPlanDependency { FromNodeId = n2, ToNodeId = plan.Requests[3].Id });
+
+        string? combine2UserContext = null;
+        var fakeProvider = new FakeAiProvider
+        {
+            Behavior = (ctx, progress, ct) =>
+            {
+                var output = ctx.ModelId switch { "model-one" => "111", "model-two" => "222", _ => "combined" };
+                if (ctx.UserContextText?.Contains("TaskTwo") == true)
+                {
+                    combine2UserContext = ctx.UserContextText;
+                }
+
+                return Task.FromResult(new ProviderExecutionResult { Success = true, OutputText = output });
+            },
+        };
+        var engine = new ExecutionPlanEngine(new AiRequestExecutor([fakeProvider], new CostCalculator(), new FakeAttachmentContentProvider()));
+        var requestsById = new[] { taskOne, taskTwo, combine }.ToDictionary(r => r.Id);
+
+        await engine.ExecuteAsync(plan, requestsById, new BindingResolutionContext(), new Dictionary<Guid, Core.Models.ProviderModel?>(), new PlanExecutionOptions(), null, CancellationToken.None);
+
+        Assert.NotNull(combine2UserContext);
+        Assert.Contains("{{TaskOne.output}}", combine2UserContext); // stale binding stays unresolved verbatim, not silently blanked
+        Assert.Contains("\"TaskTwo\"", combine2UserContext); // ...but the real upstream output is still there via the JSON block
+        Assert.Contains("222", combine2UserContext);
     }
 
     [Fact]

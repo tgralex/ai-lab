@@ -10,7 +10,8 @@
     <div class="flex gap-2">
       <button
         (click)="execute()"
-        [disabled]="executing() || !validation()?.isValid"
+        [disabled]="executing() || isDirty() || !validation()?.isValid"
+        [title]="isDirty() ? 'Save your changes before executing the plan' : ''"
         class="flex items-center gap-1.5 rounded-md bg-blue-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-40"
       >
         <app-icon [name]="executing() ? 'spinner' : 'play'" class="h-3.5 w-3.5" />
@@ -29,45 +30,97 @@
 
   <div class="flex flex-1 overflow-hidden">
     <aside [style.width.px]="sidebarWidth()" class="shrink-0 overflow-y-auto p-3">
+      @if (executing()) {
+        <div class="mb-3 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-xs text-blue-700 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-300">
+          Plan is executing — editing is disabled until it finishes.
+        </div>
+      }
+      <div [class.pointer-events-none]="executing()" [class.opacity-50]="executing()">
       <label class="mb-1 block text-xs font-semibold uppercase text-neutral-400">Plan name</label>
       <input
         [ngModel]="editName()"
-        (ngModelChange)="editName.set($event)"
+        (ngModelChange)="setEditName($event)"
+        [disabled]="executing()"
         class="mb-4 w-full rounded-md border border-neutral-300 px-2 py-1 text-sm dark:border-neutral-700 dark:bg-neutral-900"
       />
 
-      <h2 class="mb-2 text-xs font-semibold uppercase text-neutral-400">Requests in plan</h2>
+      <h2 class="mb-2 text-xs font-semibold uppercase text-neutral-400">Requests</h2>
+      <p class="mb-2 text-xs text-neutral-400">Click — or drag onto the canvas — to add a request. Repeat to add another independent instance.</p>
       <ul class="mb-4 space-y-1">
         @for (r of allRequests(); track r.id) {
-          <li class="flex items-center gap-2 text-sm">
-            <input type="checkbox" [checked]="editRequestIds().has(r.id)" (change)="toggleEditRequest(r.id)" />
-            <span class="min-w-0 flex-1 truncate">{{ r.name }}</span>
-            <label class="flex shrink-0 items-center gap-1 text-xs text-neutral-400">
-              <input type="radio" name="finalOutput" [checked]="editFinalOutputId() === r.id" (change)="editFinalOutputId.set(r.id)" />
-              final
-            </label>
+          <li>
+            <button
+              type="button"
+              draggable="true"
+              (dragstart)="onRequestDragStart($event, r)"
+              (click)="addNodeForRequest(r)"
+              [disabled]="executing()"
+              class="flex w-full cursor-grab items-center gap-1.5 rounded-md px-1 py-1 text-left text-sm hover:bg-neutral-100 active:cursor-grabbing dark:hover:bg-neutral-900"
+            >
+              <app-icon name="plus" class="h-3 w-3 shrink-0 text-neutral-400" />
+              <span class="min-w-0 flex-1 truncate">{{ r.name }}</span>
+            </button>
+          </li>
+        }
+      </ul>
+
+      <h2 class="mb-2 text-xs font-semibold uppercase text-neutral-400">Nodes in plan</h2>
+      @if (editNodes().length === 0) {
+        <p class="mb-2 text-xs text-neutral-400">Add requests above to build the plan.</p>
+      }
+      <ul class="mb-4 space-y-1">
+        @for (n of editNodes(); track n.id) {
+          <li class="rounded-md px-1 py-1 text-sm" [class.bg-red-50]="pendingRemoveNodeId() === n.id" [class.dark:bg-red-950]="pendingRemoveNodeId() === n.id">
+            @if (pendingRemoveNodeId() === n.id) {
+              <div class="flex items-center justify-between gap-2 text-xs">
+                <span class="min-w-0 flex-1 text-red-600 dark:text-red-400">
+                  Remove "{{ effectiveLabel(n) }}"{{ dependencyCountFor(n.id) > 0 ? ' and its ' + dependencyCountFor(n.id) + ' dependency edge' + (dependencyCountFor(n.id) === 1 ? '' : 's') : '' }}?
+                </span>
+                <div class="flex shrink-0 gap-1">
+                  <button (click)="confirmRemoveNode()" class="rounded bg-red-600 px-1.5 py-0.5 text-white hover:bg-red-700">Remove</button>
+                  <button (click)="cancelRemoveNode()" class="rounded border border-neutral-300 px-1.5 py-0.5 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900">Cancel</button>
+                </div>
+              </div>
+            } @else {
+              <div class="flex items-center gap-2">
+                <input
+                  [ngModel]="n.label ?? requestsById().get(n.aiRequestId)?.name ?? ''"
+                  (ngModelChange)="setNodeLabel(n.id, $event)"
+                  [disabled]="executing()"
+                  [title]="requestsById().get(n.aiRequestId)?.name ?? ''"
+                  class="min-w-0 flex-1 rounded-md border border-neutral-300 bg-white px-1.5 py-0.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                />
+                <label class="flex shrink-0 items-center gap-1 text-xs text-neutral-400">
+                  <input type="radio" name="finalOutput" [checked]="n.isFinalOutput" [disabled]="executing()" (change)="setFinalOutputId(n.id)" />
+                  final
+                </label>
+                <button (click)="requestRemoveNode(n.id)" [disabled]="executing()" title="Remove" class="shrink-0 text-neutral-400 hover:text-red-600">
+                  <app-icon name="trash" class="h-3.5 w-3.5" />
+                </button>
+              </div>
+            }
           </li>
         }
       </ul>
 
       <h2 class="mb-2 text-xs font-semibold uppercase text-neutral-400">Dependencies</h2>
-      @if (editRequests().length < 2) {
-        <p class="mb-2 text-xs text-neutral-400">Check at least two requests above to add a dependency.</p>
+      @if (editNodes().length < 2) {
+        <p class="mb-2 text-xs text-neutral-400">Add at least two nodes above to wire a dependency.</p>
       }
       <div class="mb-1 flex gap-1">
-        <select [ngModel]="addEdgeFrom()" (ngModelChange)="addEdgeFrom.set($event)" class="min-w-0 flex-1 rounded-md border border-neutral-300 px-1 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900">
+        <select [ngModel]="addEdgeFrom()" (ngModelChange)="addEdgeFrom.set($event)" [disabled]="executing()" class="min-w-0 flex-1 rounded-md border border-neutral-300 px-1 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900">
           <option value="">from…</option>
-          @for (r of editRequests(); track r.id) {
-            <option [value]="r.id">{{ r.name }}</option>
+          @for (n of editNodes(); track n.id) {
+            <option [value]="n.id">{{ effectiveLabel(n) }}</option>
           }
         </select>
-        <select [ngModel]="addEdgeTo()" (ngModelChange)="addEdgeTo.set($event)" class="min-w-0 flex-1 rounded-md border border-neutral-300 px-1 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900">
+        <select [ngModel]="addEdgeTo()" (ngModelChange)="addEdgeTo.set($event)" [disabled]="executing()" class="min-w-0 flex-1 rounded-md border border-neutral-300 px-1 py-1 text-xs dark:border-neutral-700 dark:bg-neutral-900">
           <option value="">to…</option>
-          @for (r of editRequests(); track r.id) {
-            <option [value]="r.id">{{ r.name }}</option>
+          @for (n of editNodes(); track n.id) {
+            <option [value]="n.id">{{ effectiveLabel(n) }}</option>
           }
         </select>
-        <button (click)="addEdge()" title="Add dependency" class="shrink-0 rounded-md bg-blue-600 px-2 text-white hover:bg-blue-700">
+        <button (click)="addEdge()" [disabled]="executing()" title="Add dependency" class="shrink-0 rounded-md bg-blue-600 px-2 text-white hover:bg-blue-700">
           <app-icon name="plus" class="h-3.5 w-3.5" />
         </button>
       </div>
@@ -94,13 +147,13 @@
               } @else {
                 <div class="flex items-center gap-1">
                   <select [ngModel]="editingEdgeDraft().from" (ngModelChange)="editingEdgeDraft.set({ from: $event, to: editingEdgeDraft().to })" class="min-w-0 flex-1 rounded border border-neutral-300 px-1 py-0.5 dark:border-neutral-700 dark:bg-neutral-900">
-                    @for (r of editRequests(); track r.id) {
-                      <option [value]="r.id">{{ r.name }}</option>
+                    @for (n of editNodes(); track n.id) {
+                      <option [value]="n.id">{{ effectiveLabel(n) }}</option>
                     }
                   </select>
                   <select [ngModel]="editingEdgeDraft().to" (ngModelChange)="editingEdgeDraft.set({ from: editingEdgeDraft().from, to: $event })" class="min-w-0 flex-1 rounded border border-neutral-300 px-1 py-0.5 dark:border-neutral-700 dark:bg-neutral-900">
-                    @for (r of editRequests(); track r.id) {
-                      <option [value]="r.id">{{ r.name }}</option>
+                    @for (n of editNodes(); track n.id) {
+                      <option [value]="n.id">{{ effectiveLabel(n) }}</option>
                     }
                   </select>
                   <button (click)="saveEdgeEdit()" title="Save" class="shrink-0 text-green-600 hover:text-green-700">
@@ -116,7 +169,7 @@
               }
             } @else {
               <div (click)="startEditEdge(i)" class="flex cursor-pointer items-center justify-between">
-                <span class="min-w-0 flex-1 truncate">{{ requestsById().get(d.from)?.name }} → {{ requestsById().get(d.to)?.name }}</span>
+                <span class="min-w-0 flex-1 truncate">{{ labelFor(d.from) }} → {{ labelFor(d.to) }}</span>
                 <div class="flex shrink-0 gap-1 opacity-0 group-hover:opacity-100">
                   <button (click)="$event.stopPropagation(); removeEdge(i)" title="Delete" class="text-red-500 hover:text-red-600">
                     <app-icon name="trash" class="h-3.5 w-3.5" />
@@ -137,14 +190,15 @@
       }
 
       <div class="flex gap-2">
-        <button (click)="saveEdits()" [disabled]="saving()" class="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-40">
+        <button (click)="saveEdits()" [disabled]="saving() || executing()" class="flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1 text-xs text-white hover:bg-blue-700 disabled:opacity-40">
           <app-icon [name]="saving() ? 'spinner' : 'save'" class="h-3.5 w-3.5" /> {{ saving() ? 'Saving…' : 'Save' }}
         </button>
         @if (isDirty()) {
-          <button (click)="cancelEdits()" class="flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-1 text-xs dark:border-neutral-700">
+          <button (click)="cancelEdits()" [disabled]="executing()" class="flex items-center gap-1.5 rounded-md border border-neutral-300 px-3 py-1 text-xs dark:border-neutral-700">
             <app-icon name="x" class="h-3.5 w-3.5" /> Cancel
           </button>
         }
+      </div>
       </div>
     </aside>
 
@@ -172,7 +226,10 @@
         </div>
       }
 
+      <div class="relative" (dragover)="onCanvasDragOver($event)" (drop)="onCanvasDrop($event)">
       <svg [attr.width]="graphSize().width" [attr.height]="graphSize().height">
+        <!-- Clicking empty canvas cancels an in-progress connection and hides an edge's delete icon. -->
+        <rect x="0" y="0" [attr.width]="graphSize().width" [attr.height]="graphSize().height" fill="transparent" (click)="clearCanvasSelection()" />
         @for (edge of edges(); track $index) {
           <!-- Invisible wide line to make the thin edge easy to click, sitting under the visible one. -->
           <line
@@ -199,29 +256,163 @@
           </marker>
         </defs>
 
+        <!-- Delete icon at the midpoint of a clicked (highlighted) dependency arrow. -->
+        @if (highlightedEdgeMidpoint(); as mid) {
+          <g [attr.transform]="'translate(' + mid.x + ',' + mid.y + ')'" class="cursor-pointer" (click)="deleteHighlightedEdge()">
+            <title>Delete dependency</title>
+            <circle r="9" fill="#ef4444" />
+            <path d="M-3,-3 L3,3 M3,-3 L-3,3" stroke="white" stroke-width="1.6" stroke-linecap="round" />
+          </g>
+        }
+
         @for (node of nodes(); track node.id) {
-          <g [attr.transform]="'translate(' + node.x + ',' + node.y + ')'" (click)="selectNode(node.id)" class="cursor-pointer">
+          <g [attr.transform]="'translate(' + node.x + ',' + node.y + ')'" (click)="onNodeClick(node.id)" class="group cursor-pointer">
             <rect
               [attr.width]="node.width" [attr.height]="node.height" rx="8"
               fill="white" class="dark:fill-neutral-900"
-              [attr.stroke]="selectedNodeId() === node.id ? '#3b82f6' : nodeStatusColor(node.status)"
-              [attr.stroke-width]="selectedNodeId() === node.id ? 3 : 2"
+              [attr.stroke]="connectingFromNodeId() === node.id ? '#3b82f6' : selectedNodeId() === node.id ? '#3b82f6' : nodeStatusColor(node.status)"
+              [attr.stroke-width]="selectedNodeId() === node.id || connectingFromNodeId() === node.id ? 3 : 2"
+              [attr.stroke-dasharray]="connectingFromNodeId() === node.id ? '4 3' : null"
             />
             @if (node.isFinalOutput) {
-              <text x="8" y="14" font-size="9" fill="#3b82f6" font-weight="600">FINAL OUTPUT</text>
+              <text x="20" y="14" font-size="9" fill="#3b82f6" font-weight="600">FINAL OUTPUT</text>
             }
-            <text x="8" [attr.y]="node.isFinalOutput ? 28 : 18" font-size="12" font-weight="600" fill="currentColor">{{ node.request.name }}</text>
-            <text x="8" [attr.y]="node.isFinalOutput ? 42 : 34" font-size="10" fill="#737373">{{ node.request.providerId }} · {{ node.request.modelId }}</text>
+
+            <!-- "Set as final output" star: top-left corner, always visible — filled blue when this
+                 node already is the final output, hollow gray otherwise (click to make it so; moves
+                 the designation here from wherever it was). -->
+            <g
+              [attr.transform]="'translate(11,11)'"
+              class="cursor-pointer"
+              (click)="$event.stopPropagation(); setFinalOutputId(node.id)"
+            >
+              <title>{{ node.isFinalOutput ? 'Final output' : 'Set as final output' }}</title>
+              <circle r="8" fill="white" class="dark:fill-neutral-900" [attr.stroke]="node.isFinalOutput ? '#3b82f6' : '#d4d4d4'" stroke-width="1.5" />
+              <path
+                d="M0,-4 L1.18,-1.24 L4,-1.24 L1.76,0.76 L2.47,3.9 L0,2 L-2.47,3.9 L-1.76,0.76 L-4,-1.24 L-1.18,-1.24 Z"
+                [attr.fill]="node.isFinalOutput ? '#3b82f6' : 'none'"
+                [attr.stroke]="node.isFinalOutput ? '#3b82f6' : '#a3a3a3'"
+                stroke-width="0.75"
+              />
+            </g>
+
+            <!-- Connector handle: shown once a node is selected — click it, then click another node
+                 to wire a dependency between them (mouse-drawn alternative to the sidebar dropdowns). -->
+            @if (selectedNodeId() === node.id) {
+              <g
+                [attr.transform]="'translate(' + (node.width / 2) + ',' + node.height + ')'"
+                class="cursor-crosshair"
+                (click)="$event.stopPropagation(); startConnecting(node.id)"
+              >
+                <title>Drag a dependency to another task</title>
+                <rect x="-7" y="-4" width="14" height="8" rx="2" fill="#3b82f6" stroke="white" stroke-width="1" />
+              </g>
+            }
+
+            <text
+              x="8" y="28" font-size="12" font-weight="600" fill="currentColor"
+              (dblclick)="$event.stopPropagation(); startRenaming(node)"
+            >{{ node.label }}</text>
+            <text x="8" y="42" font-size="10" fill="#737373">{{ node.request.providerId }} · {{ node.request.modelId }}</text>
             @if (node.latestRun; as run) {
-              <text x="8" [attr.y]="node.isFinalOutput ? 58 : 50" font-size="10" fill="#737373">
+              <text x="8" y="58" font-size="10" fill="#737373">
                 {{ formatTimeSpan(run.totalDuration) }} · {{ run.usage.totalTokens }} tok · {{ formatCost(run.estimatedTotalCost) }}
               </text>
+            } @else if (node.status === 'running') {
+              <text x="8" y="58" font-size="10" font-weight="500" fill="#3b82f6">{{ statusLabel(node.status) }}</text>
             } @else {
-              <text x="8" [attr.y]="node.isFinalOutput ? 58 : 50" font-size="10" fill="#a3a3a3">{{ node.status === 'running' ? 'running…' : 'not run yet' }}</text>
+              <text x="8" y="58" font-size="10" fill="#a3a3a3">not run yet</text>
             }
+
+            <!-- Status badge: top-right corner, same spot for every state. Running = spinning ring with
+                 the ticking elapsed seconds inside; completed/failed/canceled = the same hollow ring,
+                 just static (no rotation) and colored, with the whole-second duration inside. -->
+            @if (node.status === 'running') {
+              <g [attr.transform]="'translate(' + (node.width - 19) + ',15)'">
+                <title>{{ statusLabel(node.status) }}</title>
+                <circle r="11" fill="none" stroke="#bfdbfe" stroke-width="2.5" class="dark:stroke-blue-900" />
+                <path d="M0,-11 A11,11 0 0 1 11,0" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round">
+                  <animateTransform attributeName="transform" type="rotate" from="0 0 0" to="360 0 0" dur="0.8s" repeatCount="indefinite" />
+                </path>
+                <text text-anchor="middle" dy="3" font-size="8" font-weight="700" fill="#1d4ed8" class="dark:fill-blue-300">{{ elapsedLabel(node.id) }}</text>
+              </g>
+            } @else if (node.status === 'completed' && node.latestRun; as run) {
+              <g [attr.transform]="'translate(' + (node.width - 19) + ',15)'">
+                <title>{{ statusLabel(node.status) }} · {{ formatTimeSpan(run.totalDuration) }}</title>
+                <circle r="11" fill="white" class="dark:fill-neutral-900" stroke="#22c55e" stroke-width="2" />
+                <text text-anchor="middle" dy="3.5" font-size="8" font-weight="700" fill="#15803d" class="dark:fill-green-300">{{ runSeconds(run) }}s</text>
+              </g>
+            } @else if (node.status === 'failed') {
+              <g [attr.transform]="'translate(' + (node.width - 19) + ',15)'">
+                @if (node.latestRun; as run) {
+                  <title>{{ statusLabel(node.status) }} · {{ formatTimeSpan(run.totalDuration) }}</title>
+                  <circle r="11" fill="white" class="dark:fill-neutral-900" stroke="#ef4444" stroke-width="2" />
+                  <text text-anchor="middle" dy="3.5" font-size="8" font-weight="700" fill="#b91c1c" class="dark:fill-red-300">{{ runSeconds(run) }}s</text>
+                } @else {
+                  <title>{{ statusLabel(node.status) }}</title>
+                  <circle r="11" fill="white" class="dark:fill-neutral-900" stroke="#ef4444" stroke-width="2" />
+                  <path d="M-4,-4 L4,4 M4,-4 L-4,4" stroke="#ef4444" stroke-width="2" stroke-linecap="round" />
+                }
+              </g>
+            } @else if (node.status === 'canceled') {
+              <g [attr.transform]="'translate(' + (node.width - 19) + ',15)'">
+                <title>{{ statusLabel(node.status) }}</title>
+                <circle r="11" fill="white" class="dark:fill-neutral-900" stroke="#a3a3a3" stroke-width="2" />
+              </g>
+            }
+
+            <!-- Delete icon: same top-right spot as the status badge above, painted on top of it and
+                 hidden until hover — hovering to delete replaces the status badge rather than crowding
+                 next to it, which is what made both look clipped near the node's rounded corner. -->
+            <g
+              [attr.transform]="'translate(' + (node.width - 19) + ',15)'"
+              class="cursor-pointer opacity-0 group-hover:opacity-100"
+              (click)="$event.stopPropagation(); requestRemoveNode(node.id)"
+            >
+              <title>Remove</title>
+              <circle r="11" fill="white" class="dark:fill-neutral-900" stroke="#ef4444" stroke-width="2" />
+              <path d="M-4,-4 L4,4 M4,-4 L-4,4" stroke="#ef4444" stroke-width="1.5" stroke-linecap="round" />
+            </g>
           </g>
         }
       </svg>
+
+      @if (pendingRemoveNodeId(); as pendingId) {
+        @if (nodeById(pendingId); as pendingNode) {
+          <div
+            class="absolute z-10 w-56 rounded-md border border-red-200 bg-white p-2 text-xs shadow-lg dark:border-red-900 dark:bg-neutral-900"
+            [style.left.px]="pendingNode.x"
+            [style.top.px]="pendingNode.y + pendingNode.height + 6"
+          >
+            <p class="mb-2 text-red-600 dark:text-red-400">
+              Remove "{{ pendingNode.label }}"{{ dependencyCountFor(pendingId) > 0 ? ' and its ' + dependencyCountFor(pendingId) + ' dependency edge' + (dependencyCountFor(pendingId) === 1 ? '' : 's') : '' }}?
+            </p>
+            <div class="flex gap-1">
+              <button (click)="confirmRemoveNode()" class="rounded bg-red-600 px-2 py-0.5 text-white hover:bg-red-700">Remove</button>
+              <button (click)="cancelRemoveNode()" class="rounded border border-neutral-300 px-2 py-0.5 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900">Cancel</button>
+            </div>
+          </div>
+        }
+      }
+
+      @if (renamingNodeId(); as renamingId) {
+        @if (nodeById(renamingId); as renamingNode) {
+          <input
+            [ngModel]="renamingDraft()"
+            (ngModelChange)="renamingDraft.set($event)"
+            (keydown.enter)="commitRenaming()"
+            (keydown.escape)="cancelRenaming()"
+            (blur)="commitRenaming()"
+            (click)="$event.stopPropagation()"
+            appAutofocusSelect
+            class="absolute z-10 rounded border border-blue-400 bg-white px-1.5 text-xs font-semibold shadow dark:bg-neutral-900"
+            [style.left.px]="renamingNode.x + 6"
+            [style.top.px]="renamingNode.y + 20"
+            [style.width.px]="renamingNode.width - 12"
+          />
+        }
+      }
+      </div>
 
       <div class="mt-6 max-w-2xl">
         <nav class="flex border-b border-neutral-200 text-xs font-medium dark:border-neutral-800">
@@ -250,7 +441,7 @@
             @case ('task') {
               @if (selectedNode(); as node) {
                 <div class="mb-3 flex items-center justify-between">
-                  <h2 class="text-sm font-semibold">{{ node.request.name }}</h2>
+                  <h2 class="text-sm font-semibold">{{ node.label }}</h2>
                   <button (click)="selectedNodeId.set(null)" title="Clear selection" class="text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100">
                     <app-icon name="x" class="h-3.5 w-3.5" />
                   </button>
@@ -367,7 +558,7 @@
                     @for (g of run.groups; track g.levelIndex) {
                       <tr class="border-t border-neutral-100 dark:border-neutral-800">
                         <td>{{ g.levelIndex + 1 }}</td>
-                        <td class="text-right">{{ g.aiRequestIds.length }}</td>
+                        <td class="text-right">{{ g.nodeIds.length }}</td>
                         <td class="text-right font-mono">{{ formatTimeSpan(g.wallClockDuration) }}</td>
                         <td class="text-right font-mono">{{ formatTimeSpan(g.cumulativeRequestDuration) }}</td>
                       </tr>

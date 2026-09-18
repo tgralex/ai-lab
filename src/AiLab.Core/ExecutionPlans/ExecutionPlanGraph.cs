@@ -1,3 +1,5 @@
+using AiLab.Core.Requests;
+
 namespace AiLab.Core.ExecutionPlans;
 
 public sealed class ExecutionPlanValidationResult
@@ -9,43 +11,63 @@ public sealed class ExecutionPlanValidationResult
     public static ExecutionPlanValidationResult Ok { get; } = new() { Errors = [] };
 }
 
-/// <summary>Derived, ordered set of requests that have no unresolved dependencies among each other — a reporting-level grouping, not the scheduler itself (see ExecutionPlanEngine).</summary>
+/// <summary>Derived, ordered set of nodes that have no unresolved dependencies among each other — a reporting-level grouping, not the scheduler itself (see ExecutionPlanEngine).</summary>
 public sealed class ExecutionLevel
 {
     public required int Index { get; init; }
 
-    public required IReadOnlyList<Guid> RequestIds { get; init; }
+    public required IReadOnlyList<Guid> NodeIds { get; init; }
 }
 
 /// <summary>
 /// Validates an ExecutionPlan's dependency graph (unknown ids, self-loops, cycles, edges outside the
-/// plan) and derives topological levels via Kahn's algorithm. Levels are always derived — never
-/// user-specified — and exist for *reporting* (group stats); actual scheduling in
+/// plan, duplicate labels) and derives topological levels via Kahn's algorithm. Levels are always
+/// derived — never user-specified — and exist for *reporting* (group stats); actual scheduling in
 /// AiLab.Core.Execution is dependency-driven, not a strict level-by-level barrier.
 /// </summary>
 public static class ExecutionPlanGraph
 {
-    public static ExecutionPlanValidationResult Validate(ExecutionPlan plan)
+    public static ExecutionPlanValidationResult Validate(ExecutionPlan plan, IReadOnlyDictionary<Guid, AiRequestDefinition> requestsById)
     {
         var errors = new List<string>();
-        var requestIds = plan.Requests.Select(r => r.AiRequestId).ToHashSet();
+        var nodeIds = plan.Requests.Select(r => r.Id).ToHashSet();
+
+        foreach (var node in plan.Requests)
+        {
+            if (!requestsById.ContainsKey(node.AiRequestId))
+            {
+                errors.Add($"Node {node.Id} references unknown request {node.AiRequestId}.");
+            }
+        }
 
         foreach (var dependency in plan.Dependencies)
         {
-            if (dependency.FromRequestId == dependency.ToRequestId)
+            if (dependency.FromNodeId == dependency.ToNodeId)
             {
-                errors.Add($"Request {dependency.FromRequestId} cannot depend on itself.");
+                errors.Add($"Node {dependency.FromNodeId} cannot depend on itself.");
                 continue;
             }
 
-            if (!requestIds.Contains(dependency.FromRequestId))
+            if (!nodeIds.Contains(dependency.FromNodeId))
             {
-                errors.Add($"Dependency references unknown request {dependency.FromRequestId}, which is not in this plan.");
+                errors.Add($"Dependency references unknown node {dependency.FromNodeId}, which is not in this plan.");
             }
 
-            if (!requestIds.Contains(dependency.ToRequestId))
+            if (!nodeIds.Contains(dependency.ToNodeId))
             {
-                errors.Add($"Dependency references unknown request {dependency.ToRequestId}, which is not in this plan.");
+                errors.Add($"Dependency references unknown node {dependency.ToNodeId}, which is not in this plan.");
+            }
+        }
+
+        if (errors.Count == 0)
+        {
+            var duplicateLabels = plan.Requests
+                .Where(r => requestsById.ContainsKey(r.AiRequestId))
+                .GroupBy(r => r.EffectiveLabel(requestsById[r.AiRequestId]), StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() > 1);
+            foreach (var group in duplicateLabels)
+            {
+                errors.Add($"Multiple nodes share the label \"{group.Key}\" — labels must be unique within a plan.");
             }
         }
 
@@ -54,16 +76,16 @@ public static class ExecutionPlanGraph
             return new ExecutionPlanValidationResult { Errors = errors };
         }
 
-        var cycle = FindCycle(requestIds, plan.Dependencies);
+        var cycle = FindCycle(nodeIds, plan.Dependencies);
         if (cycle is not null)
         {
-            errors.Add($"Cycle detected among requests: {string.Join(" -> ", cycle)}.");
+            errors.Add($"Cycle detected among nodes: {string.Join(" -> ", cycle)}.");
         }
 
         return errors.Count == 0 ? ExecutionPlanValidationResult.Ok : new ExecutionPlanValidationResult { Errors = errors };
     }
 
-    /// <summary>DFS-based cycle detection. Returns the offending cycle (as a list of request ids) or null if none.</summary>
+    /// <summary>DFS-based cycle detection. Returns the offending cycle (as a list of node ids) or null if none.</summary>
     private static List<Guid>? FindCycle(HashSet<Guid> nodes, IReadOnlyList<ExecutionPlanDependency> edges)
     {
         var adjacency = BuildAdjacency(nodes, edges);
@@ -125,13 +147,13 @@ public static class ExecutionPlanGraph
     /// <summary>Kahn's algorithm: repeatedly peel off nodes with no unresolved incoming edges into successive levels.</summary>
     public static IReadOnlyList<ExecutionLevel> DeriveLevels(ExecutionPlan plan)
     {
-        var nodes = plan.Requests.Select(r => r.AiRequestId).ToHashSet();
+        var nodes = plan.Requests.Select(r => r.Id).ToHashSet();
         var inDegree = nodes.ToDictionary(n => n, _ => 0);
         var adjacency = BuildAdjacency(nodes, plan.Dependencies);
 
         foreach (var edge in plan.Dependencies)
         {
-            inDegree[edge.ToRequestId]++;
+            inDegree[edge.ToNodeId]++;
         }
 
         var remaining = new HashSet<Guid>(nodes);
@@ -147,7 +169,7 @@ public static class ExecutionPlanGraph
                 break;
             }
 
-            levels.Add(new ExecutionLevel { Index = levelIndex++, RequestIds = current });
+            levels.Add(new ExecutionLevel { Index = levelIndex++, NodeIds = current });
 
             foreach (var node in current)
             {
@@ -167,9 +189,9 @@ public static class ExecutionPlanGraph
         var adjacency = nodes.ToDictionary(n => n, _ => new List<Guid>());
         foreach (var edge in edges)
         {
-            if (adjacency.TryGetValue(edge.FromRequestId, out var list))
+            if (adjacency.TryGetValue(edge.FromNodeId, out var list))
             {
-                list.Add(edge.ToRequestId);
+                list.Add(edge.ToNodeId);
             }
         }
 

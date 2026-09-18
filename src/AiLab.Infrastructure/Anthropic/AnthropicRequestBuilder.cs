@@ -33,7 +33,12 @@ public static class AnthropicRequestBuilder
 
         if (contentBlocks.Count == 0)
         {
-            contentBlocks.Add(new JsonObject { ["type"] = "text", ["text"] = string.Empty });
+            // Anthropic requires the user turn to carry at least one text block with non-whitespace
+            // content — a request driven entirely by its System Prompt (no cached/user context) would
+            // otherwise send an empty (or whitespace-only) string here, which Anthropic rejects with
+            // 400 ("text content blocks must be non-empty" / "must contain non-whitespace text"). A
+            // single period satisfies that without adding any real instruction.
+            contentBlocks.Add(new JsonObject { ["type"] = "text", ["text"] = "." });
         }
 
         var body = new JsonObject

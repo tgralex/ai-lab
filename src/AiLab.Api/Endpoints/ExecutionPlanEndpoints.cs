@@ -13,7 +13,10 @@ public static class ExecutionPlanEndpoints
 {
     public record DependencyDto(Guid From, Guid To);
 
-    public record PlanRequestDto(Guid AiRequestId, bool IsFinalOutput);
+    /// <summary>Id is null for a node the client just added this edit session (server mints one);
+    /// non-null for an existing node being round-tripped so its identity — and any history/bindings
+    /// keyed on it — stays stable across saves.</summary>
+    public record PlanRequestDto(Guid? Id, Guid AiRequestId, string? Label, bool IsFinalOutput);
 
     public record CreatePlanBody(string Name, List<PlanRequestDto> Requests, List<DependencyDto> Dependencies);
 
@@ -31,10 +34,17 @@ public static class ExecutionPlanEndpoints
         app.MapPost("/api/workspaces/{workspaceId:guid}/execution-plans", async (Guid workspaceId, CreatePlanBody body, AiLabDbContext db, CancellationToken ct) =>
         {
             var plan = new ExecutionPlan { WorkspaceId = workspaceId, Name = body.Name };
-            plan.Requests.AddRange(body.Requests.Select(r => new ExecutionPlanRequest { AiRequestId = r.AiRequestId, IsFinalOutput = r.IsFinalOutput }));
-            plan.Dependencies.AddRange(body.Dependencies.Select(d => new ExecutionPlanDependency { FromRequestId = d.From, ToRequestId = d.To }));
+            plan.Requests.AddRange(body.Requests.Select(r => new ExecutionPlanRequest
+            {
+                Id = r.Id ?? Guid.NewGuid(),
+                AiRequestId = r.AiRequestId,
+                Label = r.Label,
+                IsFinalOutput = r.IsFinalOutput,
+            }));
+            plan.Dependencies.AddRange(body.Dependencies.Select(d => new ExecutionPlanDependency { FromNodeId = d.From, ToNodeId = d.To }));
 
-            var validation = ExecutionPlanGraph.Validate(plan);
+            var requestsById = await LoadRequestsByIdAsync(plan, db, ct);
+            var validation = ExecutionPlanGraph.Validate(plan, requestsById);
             if (!validation.IsValid)
             {
                 return Results.BadRequest(new { errors = validation.Errors });
@@ -53,7 +63,8 @@ public static class ExecutionPlanEndpoints
                 return Results.NotFound();
             }
 
-            var validation = ExecutionPlanGraph.Validate(plan);
+            var requestsById = await LoadRequestsByIdAsync(plan, db, ct);
+            var validation = ExecutionPlanGraph.Validate(plan, requestsById);
             var levels = validation.IsValid ? ExecutionPlanGraph.DeriveLevels(plan) : [];
             return Results.Ok(new PlanDetailResponse(plan, levels, validation));
         });
@@ -67,12 +78,39 @@ public static class ExecutionPlanEndpoints
             }
 
             plan.Name = body.Name;
-            plan.Requests.Clear();
-            plan.Requests.AddRange(body.Requests.Select(r => new ExecutionPlanRequest { AiRequestId = r.AiRequestId, IsFinalOutput = r.IsFinalOutput }));
-            plan.Dependencies.Clear();
-            plan.Dependencies.AddRange(body.Dependencies.Select(d => new ExecutionPlanDependency { FromRequestId = d.From, ToRequestId = d.To }));
 
-            var validation = ExecutionPlanGraph.Validate(plan);
+            // Reconcile in place rather than Clear()+AddRange(): a node the client round-trips keeps
+            // its existing Id (needed for stable identity — see PlanRequestDto), and EF's change
+            // tracker treats a delete-then-reinsert of that same key as an update racing a delete,
+            // throwing DbUpdateConcurrencyException. Only genuinely removed/added nodes are removed/added.
+            var incomingById = body.Requests.Where(r => r.Id.HasValue).ToDictionary(r => r.Id!.Value);
+            plan.Requests.RemoveAll(existing => !incomingById.ContainsKey(existing.Id));
+            var existingIds = plan.Requests.Select(existing => existing.Id).ToHashSet();
+            foreach (var dto in body.Requests)
+            {
+                if (dto.Id.HasValue && existingIds.Contains(dto.Id.Value))
+                {
+                    var node = plan.Requests.First(existing => existing.Id == dto.Id.Value);
+                    node.Label = dto.Label;
+                    node.IsFinalOutput = dto.IsFinalOutput;
+                }
+                else
+                {
+                    plan.Requests.Add(new ExecutionPlanRequest
+                    {
+                        Id = dto.Id ?? Guid.NewGuid(),
+                        AiRequestId = dto.AiRequestId,
+                        Label = dto.Label,
+                        IsFinalOutput = dto.IsFinalOutput,
+                    });
+                }
+            }
+
+            plan.Dependencies.Clear();
+            plan.Dependencies.AddRange(body.Dependencies.Select(d => new ExecutionPlanDependency { FromNodeId = d.From, ToNodeId = d.To }));
+
+            var requestsById = await LoadRequestsByIdAsync(plan, db, ct);
+            var validation = ExecutionPlanGraph.Validate(plan, requestsById);
             if (!validation.IsValid)
             {
                 return Results.BadRequest(new { errors = validation.Errors });
@@ -186,6 +224,13 @@ public static class ExecutionPlanEndpoints
         });
     }
 
+    private static async Task<Dictionary<Guid, Core.Requests.AiRequestDefinition>> LoadRequestsByIdAsync(Core.ExecutionPlans.ExecutionPlan plan, AiLabDbContext db, CancellationToken ct)
+    {
+        var requestIds = plan.Requests.Select(r => r.AiRequestId).Distinct().ToList();
+        var requests = await db.Requests.Where(r => requestIds.Contains(r.Id)).ToListAsync(ct);
+        return requests.ToDictionary(r => r.Id);
+    }
+
     private static async Task<(
         Core.ExecutionPlans.ExecutionPlan? Plan,
         Dictionary<Guid, Core.Requests.AiRequestDefinition>? RequestsById,
@@ -199,15 +244,13 @@ public static class ExecutionPlanEndpoints
             return (null, null, null, null, Results.NotFound());
         }
 
-        var validation = ExecutionPlanGraph.Validate(plan);
+        var requestsById = await LoadRequestsByIdAsync(plan, db, ct);
+
+        var validation = ExecutionPlanGraph.Validate(plan, requestsById);
         if (!validation.IsValid)
         {
             return (null, null, null, null, Results.BadRequest(new { errors = validation.Errors }));
         }
-
-        var requestIds = plan.Requests.Select(r => r.AiRequestId).ToList();
-        var requests = await db.Requests.Where(r => requestIds.Contains(r.Id)).ToListAsync(ct);
-        var requestsById = requests.ToDictionary(r => r.Id);
 
         var variables = await db.WorkspaceVariables
             .Where(v => v.WorkspaceId == plan.WorkspaceId)
@@ -215,7 +258,7 @@ public static class ExecutionPlanEndpoints
         var bindingContext = new BindingResolutionContext { WorkspaceVariables = variables };
 
         var catalogModels = await catalog.GetCatalogAsync(ct);
-        var modelsForCost = requests.ToDictionary(
+        var modelsForCost = requestsById.Values.ToDictionary(
             r => r.Id,
             r => catalogModels.FirstOrDefault(m => m.ProviderId == r.ProviderId && m.ModelId == r.ModelId));
 

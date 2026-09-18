@@ -1,4 +1,6 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using AiLab.Core.Models;
 using AiLab.Core.Providers;
 using AiLab.Core.Requests;
@@ -35,6 +37,7 @@ public sealed class AiRequestExecutor(
 
         var (cachedText, cachedHashes) = await AppendAttachmentsAsync(cachedResolution.ResolvedText, request.CachedContext.AttachmentIds, cancellationToken);
         var (userText, userHashes) = await AppendAttachmentsAsync(userResolution.ResolvedText, request.UserContext.AttachmentIds, cancellationToken);
+        userText = AppendPriorOutputsJson(userText, bindingContext, resolvedBindings.Keys);
         var attachmentHashes = cachedHashes.Concat(userHashes).Distinct().ToList();
 
         // The saved request's own Reasoning Effort stays whatever the user set (including
@@ -188,6 +191,51 @@ public sealed class AiRequestExecutor(
                 run.RetryCount = run.Failure.RetryCount;
             }
         }
+    }
+
+    private static readonly JsonSerializerOptions PriorOutputsJsonOptions = new() { WriteIndented = true };
+
+    /// <summary>
+    /// Appends every upstream dependency's actual output as a labeled JSON object, in addition to
+    /// (not instead of) whatever {{...}} bindings the prompt already resolved — except a dependency
+    /// already pulled in by an explicit {{Label.output}}/{{Label.json...}} binding is skipped here,
+    /// so a correctly-configured binding doesn't also get restated in the JSON block and silently
+    /// double-counted by a "sum everything you see" style prompt. This is what makes a request
+    /// reused as multiple plan nodes get the *right* upstream data for whichever instance it's
+    /// running as, even if its own {{...}} text (shared across every instance of the request) is
+    /// stale or references the wrong label — the model still sees the real current inputs for
+    /// whichever dependencies its own bindings missed. A no-op outside a plan (PriorRequestOutputs
+    /// is empty for a standalone/benchmark run).
+    /// </summary>
+    private static string AppendPriorOutputsJson(string userText, BindingResolutionContext bindingContext, IEnumerable<string> resolvedBindingExpressions)
+    {
+        if (bindingContext.PriorRequestOutputs.Count == 0)
+        {
+            return userText;
+        }
+
+        var boundLabels = resolvedBindingExpressions
+            .Select(expression => expression.Split('.', 2)[0])
+            .ToHashSet();
+
+        var json = new JsonObject();
+        foreach (var (label, output) in bindingContext.PriorRequestOutputs)
+        {
+            if (boundLabels.Contains(label))
+            {
+                continue;
+            }
+
+            json[label] = output.ParsedJson.HasValue ? JsonNode.Parse(output.RawOutputText) : JsonValue.Create(output.RawOutputText);
+        }
+
+        if (json.Count == 0)
+        {
+            return userText;
+        }
+
+        var block = "Prior task outputs (JSON):\n" + json.ToJsonString(PriorOutputsJsonOptions);
+        return string.IsNullOrEmpty(userText) ? block : $"{userText}\n\n{block}";
     }
 
     /// <summary>Appends each attached file's extracted text after the resolved prompt text, returning the combined text plus the hashes actually used (for the snapshot).</summary>

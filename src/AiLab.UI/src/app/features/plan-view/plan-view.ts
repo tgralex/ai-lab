@@ -8,16 +8,28 @@ import {
   ExecutionPlan, AiRequestDefinition, ExecutionPlanRun, PlanExecutionEvent, ExecutionRun,
   ExecutionLevel, ExecutionPlanValidationResult, Attachment,
 } from '../../core/models';
-import { formatTimeSpan, formatCost, formatBytes } from '../../shared/format';
+import { formatTimeSpan, formatCost, formatBytes, timeSpanToMs } from '../../shared/format';
 import { Icon } from '../../shared/icon';
 import { RunDetail } from '../../shared/run-detail';
 import { TextField } from '../../shared/text-field';
 import { ClickOutsideDirective } from '../../shared/click-outside.directive';
+import { AutofocusSelectDirective } from '../../shared/autofocus-select.directive';
 import { MIN_PANEL_WIDTH, MAX_PANEL_WIDTH, clamp, loadPanelWidth, savePanelWidth } from '../../shared/panel-width';
+
+/** A node being edited in the sidebar — the same AiRequestDefinition can appear as more than one
+ * of these (each with its own `id`), so `id` (not `aiRequestId`) is what identifies a node
+ * throughout the graph, dependencies, SSE events, and run history. */
+interface EditNode {
+  id: string;
+  aiRequestId: string;
+  label: string | null;
+  isFinalOutput: boolean;
+}
 
 interface GraphNode {
   id: string;
   request: AiRequestDefinition;
+  label: string;
   x: number;
   y: number;
   width: number;
@@ -39,7 +51,7 @@ const NODE_HEIGHT = 76;
 @Component({
   selector: 'app-plan-view',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink, Icon, RunDetail, TextField, ClickOutsideDirective],
+  imports: [CommonModule, FormsModule, RouterLink, Icon, RunDetail, TextField, ClickOutsideDirective, AutofocusSelectDirective],
   templateUrl: './plan-view.html',
 })
 export class PlanView implements OnInit, OnDestroy {
@@ -61,16 +73,14 @@ export class PlanView implements OnInit, OnDestroy {
   attachmentsById = computed(() => new Map(this.attachments().map(a => [a.id, a])));
 
   editName = signal('');
-  editRequestIds = signal<Set<string>>(new Set());
-  editFinalOutputId = signal<string | null>(null);
+  editNodes = signal<EditNode[]>([]);
+  editNodesById = computed(() => new Map(this.editNodes().map(n => [n.id, n])));
   editDependencies = signal<{ from: string; to: string }[]>([]);
   addEdgeFrom = signal<string>('');
   addEdgeTo = signal<string>('');
   addEdgeError = signal<string | null>(null);
   saveError = signal<string[] | null>(null);
   saving = signal(false);
-
-  editRequests = computed(() => this.allRequests().filter(r => this.editRequestIds().has(r.id)));
 
   // --- Inline dependency-row editing ---
   editingEdgeIndex = signal<number | null>(null);
@@ -88,14 +98,11 @@ export class PlanView implements OnInit, OnDestroy {
     if (this.editingEdgeIndex() !== null) return true;
     if (this.editName().trim() !== plan.name) return true;
 
-    const savedIds = new Set(plan.requests.map(r => r.aiRequestId));
-    const editIds = this.editRequestIds();
-    if (savedIds.size !== editIds.size || [...savedIds].some(id => !editIds.has(id))) return true;
+    const savedNodes = new Set(plan.requests.map(r => `${r.id}|${r.aiRequestId}|${r.label ?? ''}|${r.isFinalOutput}`));
+    const editNodesSet = new Set(this.editNodes().map(n => `${n.id}|${n.aiRequestId}|${n.label ?? ''}|${n.isFinalOutput}`));
+    if (savedNodes.size !== editNodesSet.size || [...savedNodes].some(k => !editNodesSet.has(k))) return true;
 
-    const savedFinal = plan.requests.find(r => r.isFinalOutput)?.aiRequestId ?? null;
-    if (savedFinal !== this.editFinalOutputId()) return true;
-
-    const savedDeps = new Set(plan.dependencies.map(d => `${d.fromRequestId}>${d.toRequestId}`));
+    const savedDeps = new Set(plan.dependencies.map(d => `${d.fromNodeId}>${d.toNodeId}`));
     const editDeps = new Set(this.editDependencies().map(d => `${d.from}>${d.to}`));
     if (savedDeps.size !== editDeps.size || [...savedDeps].some(k => !editDeps.has(k))) return true;
 
@@ -112,6 +119,9 @@ export class PlanView implements OnInit, OnDestroy {
 
   executing = signal(false);
   nodeStatuses = signal<Map<string, GraphNode['status']>>(new Map());
+  nodeStartTimes = signal<Map<string, number>>(new Map());
+  nowTick = signal(Date.now());
+  private tickHandle: ReturnType<typeof setInterval> | null = null;
   latestRuns = signal<Map<string, ExecutionRun>>(new Map());
   planRuns = signal<ExecutionPlanRun[]>([]);
   currentPlanRun = signal<ExecutionPlanRun | null>(null);
@@ -120,22 +130,34 @@ export class PlanView implements OnInit, OnDestroy {
   selectedNodeId = signal<string | null>(null);
   selectedNode = computed(() => this.nodes().find(n => n.id === this.selectedNodeId()) ?? null);
 
-  // Nodes/edges are drawn from the live edit state (editRequestIds/editDependencies/editFinalOutputId)
-  // rather than the last-saved `plan()` — resetEditState() seeds that state from the saved plan on
-  // load/save/cancel, so the graph always reflects what's on screen, including uncommitted edits.
+  nodeById(id: string): GraphNode | null {
+    return this.nodes().find(n => n.id === id) ?? null;
+  }
+
+  /** `request.Name`, or the node's custom Label when set — this is what bindings like
+   * {{Get a Number (2).output}} address, and what the graph/dropdowns display, so two instances
+   * of the same request are visually and referentially distinguishable. */
+  effectiveLabel(node: EditNode): string {
+    return node.label ?? this.requestsById().get(node.aiRequestId)?.name ?? node.id;
+  }
+
+  // Nodes/edges are drawn from the live edit state (editNodes/editDependencies) rather than the
+  // last-saved `plan()` — resetEditState() seeds that state from the saved plan on load/save/cancel,
+  // so the graph always reflects what's on screen, including uncommitted edits.
   nodes = computed<GraphNode[]>(() => {
-    const requestIds = this.editRequestIds();
-    if (requestIds.size === 0) return [];
+    const editNodes = this.editNodes();
+    if (editNodes.length === 0) return [];
 
     const g = new dagre.graphlib.Graph();
     g.setGraph({ rankdir: 'TB', nodesep: 30, ranksep: 60 });
     g.setDefaultEdgeLabel(() => ({}));
 
-    for (const id of requestIds) {
-      g.setNode(id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+    for (const n of editNodes) {
+      g.setNode(n.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
     }
+    const nodeIds = new Set(editNodes.map(n => n.id));
     for (const d of this.editDependencies()) {
-      if (requestIds.has(d.from) && requestIds.has(d.to)) g.setEdge(d.from, d.to);
+      if (nodeIds.has(d.from) && nodeIds.has(d.to)) g.setEdge(d.from, d.to);
     }
 
     dagre.layout(g);
@@ -143,23 +165,23 @@ export class PlanView implements OnInit, OnDestroy {
     const statuses = this.nodeStatuses();
     const runs = this.latestRuns();
     const requestsById = this.requestsById();
-    const finalOutputId = this.editFinalOutputId();
 
     const result: GraphNode[] = [];
-    for (const id of requestIds) {
-      const n = g.node(id);
-      const request = requestsById.get(id);
-      if (!request || !n) continue;
+    for (const n of editNodes) {
+      const gNode = g.node(n.id);
+      const request = requestsById.get(n.aiRequestId);
+      if (!request || !gNode) continue;
       result.push({
-        id,
+        id: n.id,
         request,
-        x: n.x - NODE_WIDTH / 2,
-        y: n.y - NODE_HEIGHT / 2,
+        label: this.effectiveLabel(n),
+        x: gNode.x - NODE_WIDTH / 2,
+        y: gNode.y - NODE_HEIGHT / 2,
         width: NODE_WIDTH,
         height: NODE_HEIGHT,
-        isFinalOutput: finalOutputId === id,
-        latestRun: runs.get(id) ?? null,
-        status: statuses.get(id) ?? 'idle',
+        isFinalOutput: n.isFinalOutput,
+        latestRun: runs.get(n.id) ?? null,
+        status: statuses.get(n.id) ?? 'idle',
       });
     }
 
@@ -194,9 +216,9 @@ export class PlanView implements OnInit, OnDestroy {
   });
 
   finalOutputRun = computed(() => {
-    const finalId = this.editFinalOutputId();
-    if (!finalId) return null;
-    return this.latestRuns().get(finalId) ?? null;
+    const finalNode = this.editNodes().find(n => n.isFinalOutput);
+    if (!finalNode) return null;
+    return this.latestRuns().get(finalNode.id) ?? null;
   });
 
   async ngOnInit() {
@@ -208,6 +230,7 @@ export class PlanView implements OnInit, OnDestroy {
   ngOnDestroy() {
     window.removeEventListener('mousemove', this.onResizeMove);
     window.removeEventListener('mouseup', this.onResizeUp);
+    if (this.tickHandle) clearInterval(this.tickHandle);
   }
 
   startResize(event: MouseEvent) {
@@ -256,9 +279,11 @@ export class PlanView implements OnInit, OnDestroy {
     const plan = this.plan();
     if (!plan) return;
     this.editName.set(plan.name);
-    this.editRequestIds.set(new Set(plan.requests.map(r => r.aiRequestId)));
-    this.editFinalOutputId.set(plan.requests.find(r => r.isFinalOutput)?.aiRequestId ?? null);
-    this.editDependencies.set(plan.dependencies.map(d => ({ from: d.fromRequestId, to: d.toRequestId })));
+    // Round-trip each node's saved `id` (not a fresh one) — the backend keeps identities stable
+    // across saves only when the client sends back the id of every node it isn't deleting, which
+    // is what keeps dependency edges, run-history attribution, and bindings pointed at the right node.
+    this.editNodes.set(plan.requests.map(r => ({ id: r.id, aiRequestId: r.aiRequestId, label: r.label, isFinalOutput: r.isFinalOutput })));
+    this.editDependencies.set(plan.dependencies.map(d => ({ from: d.fromNodeId, to: d.toNodeId })));
     this.addEdgeFrom.set('');
     this.addEdgeTo.set('');
     this.addEdgeError.set(null);
@@ -266,6 +291,9 @@ export class PlanView implements OnInit, OnDestroy {
     this.editingEdgeError.set(null);
     this.pendingDiscardEdgeIndex.set(null);
     this.highlightedEdgeIndex.set(null);
+    this.pendingRemoveNodeId.set(null);
+    this.connectingFromNodeId.set(null);
+    this.renamingNodeId.set(null);
   }
 
   cancelEdits() {
@@ -274,28 +302,92 @@ export class PlanView implements OnInit, OnDestroy {
     this.addEdgeError.set(null);
   }
 
-  toggleEditRequest(id: string) {
-    const set = new Set(this.editRequestIds());
-    if (set.has(id)) set.delete(id);
-    else set.add(id);
-    this.editRequestIds.set(set);
+  /** Adds a new, independent node for this request — clicking repeatedly is how the same request
+   * gets reused multiple times in one plan. A 2nd/3rd+ instance auto-suggests a disambiguating
+   * label ("Name (2)", "Name (3)", ...); the first instance stays unlabeled (falls back to the
+   * request's own Name), so single-instance plans and their bindings are unaffected. */
+  addNodeForRequest(request: AiRequestDefinition) {
+    if (this.executing()) return;
+    const existingCount = this.editNodes().filter(n => n.aiRequestId === request.id).length;
+    const label = existingCount === 0 ? null : `${request.name} (${existingCount + 1})`;
+    const id = crypto.randomUUID();
+    this.editNodes.set([...this.editNodes(), { id, aiRequestId: request.id, label, isFinalOutput: false }]);
+  }
 
-    if (!set.has(id)) {
-      // Dropping a request from the plan would leave any edge touching it dangling
-      // (referencing a request the plan no longer includes) — the API rejects that.
-      this.editDependencies.set(this.editDependencies().filter(d => d.from !== id && d.to !== id));
-      if (this.editFinalOutputId() === id) this.editFinalOutputId.set(null);
-      this.resetEdgeEditState();
-    }
+  pendingRemoveNodeId = signal<string | null>(null);
+
+  /** How many dependency edges touch this node — surfaced in the removal confirmation so removing
+   * a node's hidden blast radius (silently dropping its edges too) is never a surprise. */
+  dependencyCountFor(nodeId: string): number {
+    return this.editDependencies().filter(d => d.from === nodeId || d.to === nodeId).length;
+  }
+
+  requestRemoveNode(nodeId: string) {
+    if (this.executing()) return;
+    this.pendingRemoveNodeId.set(nodeId);
+  }
+
+  cancelRemoveNode() {
+    this.pendingRemoveNodeId.set(null);
+  }
+
+  confirmRemoveNode() {
+    const nodeId = this.pendingRemoveNodeId();
+    if (!nodeId) return;
+    this.editNodes.set(this.editNodes().filter(n => n.id !== nodeId));
+    // Dropping a node would leave any edge touching it dangling (referencing a node the plan no
+    // longer includes) — the API rejects that, so its edges are removed right along with it.
+    this.editDependencies.set(this.editDependencies().filter(d => d.from !== nodeId && d.to !== nodeId));
+    if (this.selectedNodeId() === nodeId) this.selectedNodeId.set(null);
+    this.resetEdgeEditState();
+    this.pendingRemoveNodeId.set(null);
+  }
+
+  /** Drag a request from the sidebar list onto the canvas to add it as a node — an alternative to
+   * clicking it, for the same addNodeForRequest() behavior. */
+  onRequestDragStart(event: DragEvent, request: AiRequestDefinition) {
+    if (this.executing()) return;
+    event.dataTransfer?.setData('text/plain', request.id);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+  }
+
+  onCanvasDragOver(event: DragEvent) {
+    if (this.executing()) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+  }
+
+  onCanvasDrop(event: DragEvent) {
+    event.preventDefault();
+    if (this.executing()) return;
+    const requestId = event.dataTransfer?.getData('text/plain');
+    const request = requestId ? this.requestsById().get(requestId) : undefined;
+    if (request) this.addNodeForRequest(request);
+  }
+
+  setNodeLabel(nodeId: string, label: string) {
+    if (this.executing()) return;
+    this.editNodes.set(this.editNodes().map(n => n.id === nodeId ? { ...n, label: label.trim() || null } : n));
+  }
+
+  setEditName(name: string) {
+    if (this.executing()) return;
+    this.editName.set(name);
+  }
+
+  setFinalOutputId(nodeId: string) {
+    if (this.executing()) return;
+    this.editNodes.set(this.editNodes().map(n => ({ ...n, isFinalOutput: n.id === nodeId })));
   }
 
   addEdge() {
+    if (this.executing()) return;
     const from = this.addEdgeFrom();
     const to = this.addEdgeTo();
     this.addEdgeError.set(null);
     if (!from || !to) return;
     if (from === to) {
-      this.addEdgeError.set('A request cannot depend on itself.');
+      this.addEdgeError.set('A node cannot depend on itself.');
       return;
     }
     if (this.editDependencies().some(d => d.from === from && d.to === to)) return;
@@ -305,7 +397,7 @@ export class PlanView implements OnInit, OnDestroy {
     // adding from→to would close it into a cycle.
     const path = this.findPath(this.editDependencies(), to, from);
     if (path) {
-      const cycleNames = [from, ...path].map(id => this.requestsById().get(id)?.name ?? id);
+      const cycleNames = [from, ...path].map(id => this.labelFor(id));
       this.addEdgeError.set(`This would create a cycle: ${cycleNames.join(' → ')}.`);
       return;
     }
@@ -316,12 +408,18 @@ export class PlanView implements OnInit, OnDestroy {
   }
 
   removeEdge(index: number) {
+    if (this.executing()) return;
     this.editDependencies.set(this.editDependencies().filter((_, i) => i !== index));
     this.resetEdgeEditState();
   }
 
+  labelFor(nodeId: string): string {
+    const node = this.editNodesById().get(nodeId);
+    return node ? this.effectiveLabel(node) : nodeId;
+  }
+
   /** Clears any in-progress inline edge edit/highlight — used whenever the dependency list is
-   * restructured out from under it (removing a row, unchecking a request) so stale indices can't
+   * restructured out from under it (removing a row, removing a node) so stale indices can't
    * point at the wrong row. */
   private resetEdgeEditState() {
     this.editingEdgeIndex.set(null);
@@ -331,6 +429,7 @@ export class PlanView implements OnInit, OnDestroy {
   }
 
   startEditEdge(index: number) {
+    if (this.executing()) return;
     if (this.editingEdgeIndex() !== null && this.editingEdgeIndex() !== index) {
       if (!this.leaveEdgeEdit()) return; // blocked: a discard-confirmation is now showing on that row
     }
@@ -388,11 +487,11 @@ export class PlanView implements OnInit, OnDestroy {
     this.editingEdgeError.set(null);
 
     if (!draft.from || !draft.to) {
-      this.editingEdgeError.set('Select both a from and to request.');
+      this.editingEdgeError.set('Select both a from and to node.');
       return;
     }
     if (draft.from === draft.to) {
-      this.editingEdgeError.set('A request cannot depend on itself.');
+      this.editingEdgeError.set('A node cannot depend on itself.');
       return;
     }
     const others = this.editDependencies().filter((_, i) => i !== idx);
@@ -402,7 +501,7 @@ export class PlanView implements OnInit, OnDestroy {
     }
     const path = this.findPath(others, draft.to, draft.from);
     if (path) {
-      const cycleNames = [draft.from, ...path].map(id => this.requestsById().get(id)?.name ?? id);
+      const cycleNames = [draft.from, ...path].map(id => this.labelFor(id));
       this.editingEdgeError.set(`This would create a cycle: ${cycleNames.join(' → ')}.`);
       return;
     }
@@ -414,11 +513,91 @@ export class PlanView implements OnInit, OnDestroy {
     this.pendingDiscardEdgeIndex.set(null);
   }
 
-  /** Clicking an edge in the graph highlights its row in the sidebar so the user knows what
-   * they'd be editing — it doesn't enter edit mode itself. */
+  /** Clicking an edge in the graph highlights its row in the sidebar (and shows a delete icon at
+   * its midpoint on the canvas — see `highlightedEdgeMidpoint`) so the user knows what they'd be
+   * acting on — it doesn't enter edit mode itself. */
   highlightEdge(edge: GraphEdge) {
     const idx = this.editDependencies().findIndex(d => d.from === edge.from && d.to === edge.to);
     this.highlightedEdgeIndex.set(idx >= 0 ? idx : null);
+  }
+
+  highlightedEdgeMidpoint = computed(() => {
+    const idx = this.highlightedEdgeIndex();
+    if (idx === null) return null;
+    const edge = this.edges()[idx];
+    if (!edge) return null;
+    return { x: (edge.points[0].x + edge.points[1].x) / 2, y: (edge.points[0].y + edge.points[1].y) / 2 };
+  });
+
+  deleteHighlightedEdge() {
+    const idx = this.highlightedEdgeIndex();
+    if (idx === null) return;
+    this.removeEdge(idx);
+  }
+
+  /** Deselects everything on the canvas — the node detail panel, an in-progress connect-drag, and
+   * a highlighted edge's delete icon — so clicking empty canvas space acts as "cancel/deselect." */
+  clearCanvasSelection() {
+    this.connectingFromNodeId.set(null);
+    this.highlightedEdgeIndex.set(null);
+  }
+
+  // --- Mouse-drawn dependencies: click a node to select it (reveals a small connector handle at
+  // its bottom edge), click that handle, then click another node to wire a dependency between them. ---
+  connectingFromNodeId = signal<string | null>(null);
+
+  startConnecting(nodeId: string) {
+    if (this.executing()) return;
+    this.connectingFromNodeId.set(this.connectingFromNodeId() === nodeId ? null : nodeId);
+  }
+
+  /** Routes a node click to either completing/canceling an in-progress connection, or the normal
+   * select-for-detail-panel behavior. */
+  onNodeClick(nodeId: string) {
+    const from = this.connectingFromNodeId();
+    if (from) {
+      this.connectingFromNodeId.set(null);
+      if (from !== nodeId) this.tryConnect(from, nodeId);
+      return;
+    }
+    this.selectNode(nodeId);
+  }
+
+  private tryConnect(from: string, to: string) {
+    if (this.executing()) return;
+    this.addEdgeError.set(null);
+    if (this.editDependencies().some(d => d.from === from && d.to === to)) return;
+
+    const path = this.findPath(this.editDependencies(), to, from);
+    if (path) {
+      const cycleNames = [from, ...path].map(id => this.labelFor(id));
+      this.addEdgeError.set(`This would create a cycle: ${cycleNames.join(' → ')}.`);
+      return;
+    }
+
+    this.editDependencies.set([...this.editDependencies(), { from, to }]);
+  }
+
+  // --- Inline canvas rename: double-click a node's title to edit its label right there, instead
+  // of only via the sidebar's "Nodes in plan" list. ---
+  renamingNodeId = signal<string | null>(null);
+  renamingDraft = signal('');
+
+  startRenaming(node: GraphNode) {
+    if (this.executing()) return;
+    this.renamingNodeId.set(node.id);
+    this.renamingDraft.set(node.label);
+  }
+
+  commitRenaming() {
+    const nodeId = this.renamingNodeId();
+    if (!nodeId) return;
+    this.setNodeLabel(nodeId, this.renamingDraft());
+    this.renamingNodeId.set(null);
+  }
+
+  cancelRenaming() {
+    this.renamingNodeId.set(null);
   }
 
   /** BFS for a path from `start` to `target` following existing dependency edges; null if none. */
@@ -456,10 +635,12 @@ export class PlanView implements OnInit, OnDestroy {
 
   async saveEdits() {
     const plan = this.plan();
-    if (!plan) return;
-    const requests = Array.from(this.editRequestIds()).map(id => ({
-      aiRequestId: id,
-      isFinalOutput: id === this.editFinalOutputId(),
+    if (!plan || this.executing()) return;
+    const requests = this.editNodes().map(n => ({
+      id: n.id,
+      aiRequestId: n.aiRequestId,
+      label: n.label,
+      isFinalOutput: n.isFinalOutput,
     }));
 
     this.saving.set(true);
@@ -478,25 +659,32 @@ export class PlanView implements OnInit, OnDestroy {
 
   async execute() {
     const plan = this.plan();
-    if (!plan) return;
+    if (!plan || this.isDirty()) return;
     this.executing.set(true);
     this.nodeStatuses.set(new Map());
+    this.nodeStartTimes.set(new Map());
     this.latestRuns.set(new Map());
     this.currentPlanRun.set(null);
+    this.nowTick.set(Date.now());
+    this.tickHandle = setInterval(() => this.nowTick.set(Date.now()), 100);
 
     try {
       const planRun = await this.api.executeExecutionPlanStream(plan.id, (evt: PlanExecutionEvent) => {
-        if (evt.kind === 0 && evt.aiRequestId) {
+        if (evt.kind === 0 && evt.planNodeId) {
           const statuses = new Map(this.nodeStatuses());
-          statuses.set(evt.aiRequestId, 'running');
+          statuses.set(evt.planNodeId, 'running');
           this.nodeStatuses.set(statuses);
-        } else if (evt.kind === 1 && evt.aiRequestId && evt.run) {
+
+          const starts = new Map(this.nodeStartTimes());
+          starts.set(evt.planNodeId, new Date(evt.timestamp).getTime());
+          this.nodeStartTimes.set(starts);
+        } else if (evt.kind === 1 && evt.planNodeId && evt.run) {
           const statuses = new Map(this.nodeStatuses());
-          statuses.set(evt.aiRequestId, evt.run.status === 3 ? 'completed' : evt.run.status === 5 ? 'canceled' : 'failed');
+          statuses.set(evt.planNodeId, evt.run.status === 3 ? 'completed' : evt.run.status === 5 ? 'canceled' : 'failed');
           this.nodeStatuses.set(statuses);
 
           const runs = new Map(this.latestRuns());
-          runs.set(evt.aiRequestId, evt.run);
+          runs.set(evt.planNodeId, evt.run);
           this.latestRuns.set(runs);
         }
       });
@@ -504,6 +692,32 @@ export class PlanView implements OnInit, OnDestroy {
       this.planRuns.set(await this.api.listPlanRuns(plan.id));
     } finally {
       this.executing.set(false);
+      if (this.tickHandle) {
+        clearInterval(this.tickHandle);
+        this.tickHandle = null;
+      }
+    }
+  }
+
+  /** Live elapsed seconds (one decimal) for a still-running node, ticking smoothly; null once it has a result. */
+  elapsedLabel(nodeId: string): string | null {
+    const start = this.nodeStartTimes().get(nodeId);
+    if (start === undefined) return null;
+    return Math.max(0, (this.nowTick() - start) / 1000).toFixed(1);
+  }
+
+  /** Whole-second duration for a completed/failed run, shown inside the status badge. */
+  runSeconds(run: ExecutionRun): number {
+    return Math.round((timeSpanToMs(run.totalDuration) ?? 0) / 1000);
+  }
+
+  statusLabel(status: GraphNode['status']): string {
+    switch (status) {
+      case 'running': return 'Running…';
+      case 'completed': return 'Success';
+      case 'failed': return 'Error';
+      case 'canceled': return 'Canceled';
+      default: return '';
     }
   }
 
@@ -517,13 +731,15 @@ export class PlanView implements OnInit, OnDestroy {
     this.loadingPlanRun.set(true);
     try {
       // Plan runs only store `executionRunIds` (not the ExecutionRun objects themselves, to keep
-      // the plan-run payload small) — fetch each one and key by aiRequestId so nodes/detail panel
-      // can look theirs up the same way the live execute() stream does via `latestRuns`.
+      // the plan-run payload small) — fetch each one and key by planNodeId so nodes/detail panel
+      // can look theirs up the same way the live execute() stream does via `latestRuns`. Runs
+      // recorded before node identity shipped have a null planNodeId; their (backfilled) node id
+      // equals aiRequestId, so falling back to that still attributes them correctly.
       const runs = await Promise.all(run.executionRunIds.map(id => this.api.getRun(id)));
-      const runsMap = new Map(runs.map(r => [r.aiRequestId, r]));
+      const runsMap = new Map(runs.map(r => [r.planNodeId ?? r.aiRequestId, r]));
       const statuses = new Map<string, GraphNode['status']>();
       for (const r of runs) {
-        statuses.set(r.aiRequestId, r.status === 3 ? 'completed' : r.status === 5 ? 'canceled' : 'failed');
+        statuses.set(r.planNodeId ?? r.aiRequestId, r.status === 3 ? 'completed' : r.status === 5 ? 'canceled' : 'failed');
       }
       this.latestRuns.set(runsMap);
       this.nodeStatuses.set(statuses);
