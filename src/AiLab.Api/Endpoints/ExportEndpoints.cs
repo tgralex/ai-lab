@@ -24,13 +24,14 @@ public static class ExportEndpoints
             var requestsById = requests.ToDictionary(r => r.Id);
             var requestIds = requests.Select(r => r.Id).ToList();
 
-            var runs = await db.ExecutionRuns.Where(r => requestIds.Contains(r.AiRequestId)).OrderBy(r => r.StartedAt).ToListAsync(ct);
+            var runs = await db.ExecutionRuns.Where(r => requestIds.Contains(r.AiRequestId)).OrderByDescending(r => r.StartedAt).ToListAsync(ct);
 
             var rows = runs.Select(run => new BenchmarkExportRow
             {
                 Workspace = workspace.Name,
                 ExecutionPlan = null,
                 Request = requestsById.TryGetValue(run.AiRequestId, out var req) ? req.Name : run.AiRequestId.ToString(),
+                RequestId = run.AiRequestId,
                 Run = run.Id,
                 Provider = run.ProviderId,
                 Model = run.ActualModel ?? run.RequestedModel ?? "",
