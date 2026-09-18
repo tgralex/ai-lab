@@ -45,6 +45,7 @@ export interface AiRequestDefinition {
   streamingEnabled: boolean;
   maxOutputTokens: number | null;
   temperature: number | null;
+  stopSequences: string[];
   reasoning: ReasoningConfig | null;
   providerSettings: Record<string, string>;
   promptCacheKey: string | null;
@@ -99,6 +100,7 @@ export interface RequestSnapshot {
   streaming: boolean;
   maxOutputTokens: number | null;
   temperature: number | null;
+  stopSequences: string[];
   structuredOutputSchema: string | null;
   promptCacheKey: string | null;
   providerSettings: Record<string, string>;

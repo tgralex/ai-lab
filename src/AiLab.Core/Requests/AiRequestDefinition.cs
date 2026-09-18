@@ -33,6 +33,12 @@ public sealed class AiRequestDefinition
     /// provider's own default" rather than sending an explicit value.</summary>
     public double? Temperature { get; set; }
 
+    /// <summary>Strings that immediately end generation when emitted. OpenAI's Responses API (the
+    /// endpoint this app targets for OpenAI — see OpenAiRequestBuilder) has no equivalent
+    /// parameter at all, unlike its older Chat Completions API, so this has no effect there;
+    /// Anthropic, Gemini, and Grok all support it.</summary>
+    public IReadOnlyList<string> StopSequences { get; set; } = [];
+
     public ReasoningConfig? Reasoning { get; set; }
 
     public IReadOnlyDictionary<string, string> ProviderSettings { get; set; } = new Dictionary<string, string>();
@@ -81,6 +87,7 @@ public sealed class AiRequestDefinition
             StreamingEnabled = StreamingEnabled,
             MaxOutputTokens = MaxOutputTokens,
             Temperature = Temperature,
+            StopSequences = [.. StopSequences],
             Reasoning = Reasoning is null ? null : new ReasoningConfig { Effort = Reasoning.Effort },
             ProviderSettings = new Dictionary<string, string>(ProviderSettings),
             PromptCacheKey = PromptCacheKey,
@@ -108,6 +115,7 @@ public sealed class AiRequestDefinition
             StreamingEnabled = StreamingEnabled,
             MaxOutputTokens = MaxOutputTokens,
             Temperature = Temperature,
+            StopSequences = [.. StopSequences],
             Reasoning = Reasoning is null ? null : new ReasoningConfig { Effort = Reasoning.Effort },
             ProviderSettings = new Dictionary<string, string>(ProviderSettings),
             PromptCacheKey = PromptCacheKey,

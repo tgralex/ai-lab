@@ -61,6 +61,11 @@ public static class AnthropicRequestBuilder
             body["system"] = context.SystemPrompt;
         }
 
+        if (context.StopSequences.Count > 0)
+        {
+            body["stop_sequences"] = new JsonArray(context.StopSequences.Select(s => (JsonNode)s).ToArray());
+        }
+
         if (!string.IsNullOrEmpty(context.ReasoningEffort))
         {
             body["thinking"] = new JsonObject

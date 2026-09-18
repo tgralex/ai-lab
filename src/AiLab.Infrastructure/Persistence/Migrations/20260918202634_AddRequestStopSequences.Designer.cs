@@ -3,6 +3,7 @@ using System;
 using AiLab.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace AiLab.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AiLabDbContext))]
-    partial class AiLabDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260918202634_AddRequestStopSequences")]
+    partial class AddRequestStopSequences
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.12");

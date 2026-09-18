@@ -53,6 +53,11 @@ public static class GrokRequestBuilder
             body["temperature"] = temperature;
         }
 
+        if (context.StopSequences.Count > 0)
+        {
+            body["stop"] = new JsonArray(context.StopSequences.Select(s => (JsonNode)s).ToArray());
+        }
+
         if (!string.IsNullOrEmpty(context.ReasoningEffort))
         {
             body["reasoning_effort"] = context.ReasoningEffort;

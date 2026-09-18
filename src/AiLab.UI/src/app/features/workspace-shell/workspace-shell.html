@@ -268,6 +268,25 @@
             />
           </div>
 
+          <div>
+            <label class="mb-1 block text-xs font-medium text-neutral-500">Stop Sequences <span class="text-neutral-400">(optional)</span></label>
+            @for (seq of d.stopSequences ?? []; track $index; let i = $index) {
+              <div class="mb-1 flex gap-1">
+                <input
+                  [ngModel]="seq"
+                  (ngModelChange)="updateStopSequence(i, $event)"
+                  class="min-w-0 flex-1 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                />
+                <button type="button" (click)="removeStopSequence(i)" class="shrink-0 text-neutral-400 hover:text-red-600">
+                  <app-icon name="x" class="h-3.5 w-3.5" />
+                </button>
+              </div>
+            }
+            <button type="button" (click)="addStopSequence()" class="flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100">
+              <app-icon name="plus" class="h-3.5 w-3.5" /> Add stop sequence
+            </button>
+          </div>
+
           <div class="flex items-center gap-4">
             <label class="flex items-center gap-2 text-sm">
               <input
@@ -298,6 +317,34 @@
               placeholder='{"type": "object", "properties": {...}}'
               class="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-xs dark:border-neutral-700 dark:bg-neutral-900"
             ></textarea>
+          </div>
+
+          <div>
+            <label class="mb-1 block text-xs font-medium text-neutral-500">
+              Provider Settings <span class="text-neutral-400">(advanced — raw key/value pairs merged into the request body, e.g. top_k, seed; optional)</span>
+            </label>
+            @for (row of providerSettingsRows(); track $index; let i = $index) {
+              <div class="mb-1 flex gap-1">
+                <input
+                  [ngModel]="row.key"
+                  (ngModelChange)="updateProviderSettingRow(i, 'key', $event)"
+                  placeholder="key"
+                  class="min-w-0 flex-1 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                />
+                <input
+                  [ngModel]="row.value"
+                  (ngModelChange)="updateProviderSettingRow(i, 'value', $event)"
+                  placeholder="value"
+                  class="min-w-0 flex-1 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm dark:border-neutral-700 dark:bg-neutral-900"
+                />
+                <button type="button" (click)="removeProviderSettingRow(i)" class="shrink-0 text-neutral-400 hover:text-red-600">
+                  <app-icon name="x" class="h-3.5 w-3.5" />
+                </button>
+              </div>
+            }
+            <button type="button" (click)="addProviderSettingRow()" class="flex items-center gap-1 text-xs text-neutral-500 hover:text-neutral-900 dark:hover:text-neutral-100">
+              <app-icon name="plus" class="h-3.5 w-3.5" /> Add setting
+            </button>
           </div>
         </div>
         </div>

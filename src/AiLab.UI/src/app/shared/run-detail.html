@@ -111,6 +111,9 @@
       <tr><td class="py-1 text-neutral-500">Reasoning tokens</td><td class="text-right font-mono">{{ r.usage.reasoningTokens }}</td></tr>
       <tr><td class="py-1 text-neutral-500">Reasoning effort</td><td class="text-right font-mono capitalize">{{ r.snapshot.reasoningEffort ?? '—' }}</td></tr>
       <tr><td class="py-1 text-neutral-500">Temperature</td><td class="text-right font-mono">{{ r.snapshot.temperature ?? '—' }}</td></tr>
+      @if (r.snapshot.stopSequences.length > 0) {
+        <tr><td class="py-1 text-neutral-500">Stop sequences</td><td class="text-right font-mono">{{ r.snapshot.stopSequences.join(', ') }}</td></tr>
+      }
       <tr><td class="py-1 text-neutral-500">Estimated cost</td><td class="text-right font-mono">{{ formatCost(r.estimatedTotalCost) }}</td></tr>
       <tr><td class="py-1 text-neutral-500">Provider / model</td><td class="text-right font-mono">{{ r.providerId }} / {{ r.actualModel ?? r.requestedModel }}</td></tr>
     </tbody>
