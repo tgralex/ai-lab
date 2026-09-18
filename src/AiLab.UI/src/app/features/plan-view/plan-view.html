@@ -1,12 +1,14 @@
 <div class="flex h-screen flex-col bg-neutral-50 text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100">
   <header class="flex items-center justify-between border-b border-neutral-200 px-4 py-2 dark:border-neutral-800">
-    <div class="flex items-center gap-3">
-      <a [routerLink]="['/w', workspaceId()]" class="flex items-center gap-1 text-sm text-neutral-400 hover:text-neutral-600">
-        <app-icon name="arrowLeft" class="h-3.5 w-3.5" /> Workspace
+    <nav class="flex min-w-0 items-center gap-1.5 text-sm">
+      <a routerLink="/" class="flex shrink-0 items-center gap-1 text-neutral-400 hover:text-neutral-600" title="Back to workspace list">
+        <app-icon name="arrowLeft" class="h-3.5 w-3.5" /> AI Lab
       </a>
-      <span class="text-neutral-300">/</span>
-      <h1 class="text-sm font-semibold">{{ plan()?.name }}</h1>
-    </div>
+      <span class="shrink-0 text-neutral-300">/</span>
+      <a [routerLink]="['/w', workspaceId()]" class="shrink-0 truncate text-neutral-400 hover:text-neutral-600">{{ workspace()?.name }}</a>
+      <span class="shrink-0 text-neutral-300">/</span>
+      <h1 class="min-w-0 truncate text-sm font-semibold">{{ plan()?.name }}</h1>
+    </nav>
     <div class="flex gap-2">
       <button
         (click)="execute()"
