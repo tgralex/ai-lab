@@ -102,10 +102,10 @@
                     [title]="requestsById().get(n.aiRequestId)?.name ?? ''"
                     class="min-w-0 flex-1 rounded-md border border-blue-400 bg-white px-1.5 py-0.5 text-sm dark:bg-neutral-900"
                   />
-                  <button (click)="commitNodeLabelEdit()" title="Save" class="shrink-0 text-green-600 hover:text-green-700">
+                  <button (click)="commitNodeLabelEdit()" title="Save" class="mt-1 shrink-0 text-green-600 hover:text-green-700">
                     <app-icon name="check" class="h-3.5 w-3.5" />
                   </button>
-                  <button (click)="cancelNodeLabelEdit()" title="Cancel" class="shrink-0 text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100">
+                  <button (click)="cancelNodeLabelEdit()" title="Cancel" class="mt-1 shrink-0 text-neutral-400 hover:text-neutral-900 dark:hover:text-neutral-100">
                     <app-icon name="x" class="h-3.5 w-3.5" />
                   </button>
                 } @else {
@@ -121,7 +121,7 @@
                 </div>
                 <div class="ml-auto flex shrink-0 items-center gap-2">
                 @if (editingNodeId() === n.id || n.isFinalOutput) {
-                  <label class="-mt-px flex shrink-0 items-center gap-1 text-xs text-neutral-400">
+                  <label class="-mt-px flex shrink-0 items-center gap-1 text-xs text-neutral-400 hover:text-blue-600 dark:hover:text-blue-400">
                     <input type="radio" name="finalOutput" [checked]="n.isFinalOutput" [disabled]="executing()" (change)="setFinalOutputId(n.id)" />
                     final
                   </label>
@@ -130,7 +130,7 @@
                   (click)="requestRemoveNode(n.id)"
                   [disabled]="executing()"
                   title="Remove"
-                  [class]="editingNodeId() === n.id ? 'shrink-0 text-neutral-400 hover:text-red-600' : 'shrink-0 text-neutral-400 hover:text-red-600 opacity-0 group-hover:opacity-100'"
+                  [class]="editingNodeId() === n.id ? 'mt-0.5 shrink-0 text-neutral-400 hover:text-red-600' : 'mt-0.5 shrink-0 text-neutral-400 hover:text-red-600 opacity-0 group-hover:opacity-100'"
                 >
                   <app-icon name="trash" class="h-3.5 w-3.5" />
                 </button>
