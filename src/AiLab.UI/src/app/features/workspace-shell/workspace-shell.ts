@@ -104,6 +104,10 @@ export class WorkspaceShell implements OnInit, OnDestroy {
   benchmarkResult = signal<BenchmarkResponse | null>(null);
 
   compareSelection = signal<Set<string>>(new Set());
+  allRequestsSelected = computed(() => {
+    const reqs = this.requests();
+    return reqs.length > 0 && reqs.every(r => this.compareSelection().has(r.id));
+  });
   comparisonRows = signal<ComparisonRow[]>([]);
   selectedComparisonRequestId = signal<string | null>(null);
   selectedComparisonRunId = signal<string | null>(null);
@@ -504,9 +508,11 @@ export class WorkspaceShell implements OnInit, OnDestroy {
   viewHistoryRun(run: ExecutionRun) {
     this.selectedHistoryRun.set(run);
     if (this.historyCompareMode()) {
-      // Came from (or are still within) a comparison — show this run's detail but keep the
-      // comparison alive behind a "back" link instead of discarding it.
+      // The comparison table (and this run's detail-with-back-link) render on the Compare tab —
+      // clicking any run while a comparison is active takes you there instead of showing detail
+      // here in History, so there's one consistent place a run-in-comparison's detail appears.
       this.viewingRunFromComparison.set(true);
+      this.activeTab.set('compare');
     } else {
       this.viewingRunFromComparison.set(false);
     }
@@ -542,6 +548,9 @@ export class WorkspaceShell implements OnInit, OnDestroy {
     if (this.historyCompareSelection().size < 2) return;
     this.historyCompareMode.set(true);
     this.viewingRunFromComparison.set(false);
+    // This comparison (multiple runs of the SAME task) renders on the Compare tab, alongside —
+    // but not mixed with — that tab's own different-tasks comparison.
+    this.activeTab.set('compare');
   }
 
   exitHistoryComparison() {
@@ -554,6 +563,10 @@ export class WorkspaceShell implements OnInit, OnDestroy {
     if (set.has(id)) set.delete(id);
     else set.add(id);
     this.compareSelection.set(set);
+  }
+
+  toggleSelectAllRequests() {
+    this.compareSelection.set(this.allRequestsSelected() ? new Set() : new Set(this.requests().map(r => r.id)));
   }
 
   async loadComparison() {
