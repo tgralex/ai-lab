@@ -441,6 +441,12 @@ Founder & Software Architect — Ingenious Software Solutions
 Portfolio: https://ingenioussoftwaresolutions.com/projects  
 LinkedIn: https://www.linkedin.com/in/tgralex/
 
+## License
+
+AI Lab is open-source software licensed under the [MIT License](LICENSE).
+
+Copyright © 2026 Tigran Aleksanyan.
+
 ---
 
 **AI Lab — experiment with AI like an engineer, not a chat session.**
