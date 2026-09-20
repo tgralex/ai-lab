@@ -2,7 +2,7 @@
 
 **A developer workbench for designing, testing, comparing, and orchestrating AI calls across multiple models and providers.**
 
-AI Lab is intended to bring the repeatability of tools such as Postman to AI application development.
+AI Lab brings the repeatability and structured experimentation of tools like Postman to AI application development.
 
 Instead of testing prompts manually across different provider consoles, AI Lab provides a single local environment where developers can define AI requests, vary prompts, models and settings, compare results, benchmark performance, and compose individual requests into multi-step AI workflows.
 
