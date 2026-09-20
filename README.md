@@ -1,4 +1,4 @@
-# AI Lab
+# AI Lab — Think Postman for AI Prompts and Workflows
 
 **A developer workbench for designing, testing, comparing, and orchestrating AI calls across multiple models and providers.**
 
