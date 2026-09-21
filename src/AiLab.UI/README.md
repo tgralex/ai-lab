@@ -7,8 +7,10 @@ This project was generated using [Angular CLI](https://github.com/angular/angula
 To start a local development server, run:
 
 ```bash
-ng serve
+npm start
 ```
+
+This runs `ng serve` with the `--proxy-config proxy.conf.json` needed to route `/api/*` calls to the backend, after regenerating `src/app/core/build-info.ts`. Running plain `ng serve` skips both, and API calls will fail. The AiLab.Api backend must also be running (see the root [README](../../README.md#run-the-backend)).
 
 Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
 
@@ -31,10 +33,10 @@ ng generate --help
 To build the project run:
 
 ```bash
-ng build
+npm run build
 ```
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+This compiles the project and, per this project's `angular.json`, writes the build output directly into `../AiLab.Api/wwwroot` (not the default `dist/` directory) so the AiLab.Api backend can serve it. By default, the production build optimizes your application for performance and speed.
 
 ## Running unit tests
 
