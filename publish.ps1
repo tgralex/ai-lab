@@ -1,6 +1,6 @@
 <#
-  Builds the Angular SPA, copies its output into AiLab.Api/wwwroot, then publishes the
-  ASP.NET Core host as a self-contained artifact under ./publish.
+  Builds the Angular SPA (ng build writes straight into AiLab.Api/wwwroot, per angular.json),
+  then publishes the ASP.NET Core host as a self-contained artifact under ./publish.
 
   Usage: pwsh ./publish.ps1 [-Configuration Release] [-OutputDir ./publish]
 #>
@@ -12,6 +12,12 @@ param(
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 
+$wwwroot = Join-Path $root "src/AiLab.Api/wwwroot"
+Write-Host "==> Clearing $wwwroot"
+if (Test-Path $wwwroot) {
+    Get-ChildItem $wwwroot -Force | Where-Object { $_.Name -ne ".gitkeep" } | Remove-Item -Recurse -Force
+}
+
 Write-Host "==> Building Angular SPA ($Configuration)"
 Push-Location (Join-Path $root "src/AiLab.UI")
 try {
@@ -20,16 +26,6 @@ try {
 } finally {
     Pop-Location
 }
-
-$angularOut = Join-Path $root "src/AiLab.UI/dist/AiLab.UI/browser"
-$wwwroot = Join-Path $root "src/AiLab.Api/wwwroot"
-
-Write-Host "==> Copying Angular build into $wwwroot"
-if (Test-Path $wwwroot) {
-    Get-ChildItem $wwwroot -Force | Where-Object { $_.Name -ne ".gitkeep" } | Remove-Item -Recurse -Force
-}
-New-Item -ItemType Directory -Force -Path $wwwroot | Out-Null
-Copy-Item (Join-Path $angularOut "*") $wwwroot -Recurse -Force
 
 Write-Host "==> Publishing AiLab.Api ($Configuration)"
 $apiProject = Join-Path $root "src/AiLab.Api/AiLab.Api.csproj"
