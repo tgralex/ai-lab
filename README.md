@@ -298,12 +298,7 @@ src/
 
 tests/
 └── AiLab.Tests
-
-WinForms/
-└── Earlier desktop prototype
 ```
-
-The repository also contains the earlier WinForms prototype from which the current full-stack implementation evolved.
 
 ## Running Locally
 
