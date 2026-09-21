@@ -287,6 +287,12 @@ The project includes automated tests around important execution behavior, includ
 
 Provider implementations can be exercised through test doubles without requiring every test to make a live external AI request.
 
+Run the suite with:
+
+```bash
+dotnet test tests/AiLab.Tests
+```
+
 ## Repository Structure
 
 ```text
@@ -333,7 +339,19 @@ You can also edit the data-directory `.env` file by hand, or export the variable
 
 The root-level [`.env.example`](.env.example) lists these same variable names for reference — copy the ones you need into the data-directory `.env` file above rather than into a root `.env`.
 
+### Run the backend
+
+From the repository root:
+
+```bash
+dotnet run --project src/AiLab.Api
+```
+
+This applies any pending database migrations, then listens on `http://127.0.0.1:8765` by default. The port can be overridden using `AILAB_PORT` or the `--port` command-line option.
+
 ### Run the UI in development
+
+The backend must already be running (previous step) — the dev server proxies API calls to it.
 
 ```bash
 cd src/AiLab.UI
@@ -347,15 +365,7 @@ This starts the Angular dev server, which rebuilds automatically on every save:
 http://localhost:4200
 ```
 
-### Run the backend
-
-From the repository root:
-
-```bash
-dotnet run --project src/AiLab.Api
-```
-
-The port can be overridden using `AILAB_PORT` or the `--port` command-line option.
+Requests to `/api/*` are proxied to the backend at `http://127.0.0.1:8765` (see `src/AiLab.UI/proxy.conf.json`). If you run the backend on a different port via `AILAB_PORT`/`--port`, update that file's target to match, or the UI will load but API calls will fail.
 
 ### Build the UI for the backend to serve
 
