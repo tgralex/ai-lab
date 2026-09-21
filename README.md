@@ -306,25 +306,34 @@ tests/
 
 You will need:
 
-- .NET SDK
-- Node.js / npm
+- **.NET 10 SDK**
+- **Node.js / npm** (a current LTS Node release; see `src/AiLab.UI/package.json` for the Angular version in use)
 - API credentials for whichever AI providers you want to use
 
 You do not need credentials for every supported provider.
 
 ### Configure provider credentials
 
-Configure your API keys locally using the backend configuration command.
+AI Lab resolves each provider's API key in this order: a real OS environment variable first, then a `.env` file in the app's **data directory** — `src/AiLab.Api/data/.env` by default, or `$AILAB_DATA_DIR/.env` if you override the data directory. That file is created for you and is git-ignored; a `.env` at the repository root is **not** read by the app.
 
-For example:
+The easiest way to set keys is the interactive configure command, which writes directly to that data-directory `.env` file (input is masked, and you can leave any provider blank to skip it):
 
 ```bash
 dotnet run --project src/AiLab.Api -- configure
 ```
 
-Provider credentials are stored locally and are intentionally excluded from source control.
+You can also edit the data-directory `.env` file by hand, or export the variables in your shell. The recognized names, one per provider:
 
-### Run the Angular development server
+| Provider  | Environment variable(s)                 |
+|-----------|------------------------------------------|
+| OpenAI    | `OPENAI_API_KEY`                          |
+| Anthropic | `ANTHROPIC_API_KEY`                       |
+| Grok / xAI| `XAI_API_KEY` (or `GROK_API_KEY`)         |
+| Gemini    | `GEMINI_API_KEY` (or `GOOGLE_API_KEY`)    |
+
+The root-level [`.env.example`](.env.example) lists these same variable names for reference — copy the ones you need into the data-directory `.env` file above rather than into a root `.env`.
+
+### Run the UI in development
 
 ```bash
 cd src/AiLab.UI
@@ -332,7 +341,7 @@ npm install
 npm start
 ```
 
-The development UI is available at:
+This starts the Angular dev server, which rebuilds automatically on every save:
 
 ```text
 http://localhost:4200
@@ -346,9 +355,18 @@ From the repository root:
 dotnet run --project src/AiLab.Api
 ```
 
-By default, the backend runs locally and can also serve the compiled Angular application.
-
 The port can be overridden using `AILAB_PORT` or the `--port` command-line option.
+
+### Build the UI for the backend to serve
+
+The backend can also serve the Angular app directly from its own port, but only from a **pre-built static copy** in `src/AiLab.Api/wwwroot` — it does not proxy to the dev server and won't pick up UI changes on its own. Build (or rebuild) that copy with:
+
+```bash
+cd src/AiLab.UI
+npm run build
+```
+
+This runs `ng build`, which outputs straight into `src/AiLab.Api/wwwroot`. After building, running `dotnet run --project src/AiLab.Api` alone serves the full app — API and UI together — from the backend's own port. Re-run this build any time `src/AiLab.UI` changes, or the backend keeps serving a stale snapshot.
 
 ## Example Use Cases
 
