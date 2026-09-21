@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "api",
-      "runtimeExecutable": "C:\\Users\\tgral\\AppData\\Local\\dotnet-sdk10\\dotnet.exe",
+      "runtimeExecutable": "dotnet",
       "runtimeArgs": ["run", "--no-launch-profile", "--project", "src/AiLab.Api/AiLab.Api.csproj"],
       "port": 8765
     },
