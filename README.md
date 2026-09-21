@@ -257,13 +257,7 @@ AI Lab is designed as a developer tool and runs locally.
 
 Your AI provider credentials remain under your control rather than being sent to an AI Lab-hosted service.
 
-Credentials can be configured from the command line:
-
-```bash
-ailab configure
-```
-
-or when the backend starts.
+Credentials can be configured from the command line (see [Configure provider credentials](#configure-provider-credentials) below), or interactively when the backend starts, if you haven't configured them yet.
 
 The browser UI does not need to directly own provider API credentials. AI calls are executed through the local .NET backend.
 
